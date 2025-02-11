@@ -16,6 +16,10 @@ The main changes are:
 3. I have added weights for text matching. Key points content will enjoy a higher rating weight (80%), while the rest of the content will only have a small weight(20%).
 4. For configuration issues, a correct configuration code is the most important. Therefore, I will focus the evaluation on the code snippets rather than some simple descriptions.
 
+## Output File Format
+
+The evaluation result will be exported as "LLM_keypoint_results.csv", the rows are "ID", "Key Point", "LLM Method Result", "RAG_Answer"
+
 ## Evaluation Result
 
 The current evaluation accuracy is roughly 91.4% (32/35).
