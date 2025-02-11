@@ -2,11 +2,14 @@ import os
 import openai
 import pandas as pd
 from bs4 import BeautifulSoup
+from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm  # Import tqdm
 
-os.environ["http_proxy"] = "http://localhost:7890"
-os.environ["https_proxy"] = "http://localhost:7890"
+# os.environ["http_proxy"] = "http://localhost:7890"
+# os.environ["https_proxy"] = "http://localhost:7890"
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
 
 def extract_key_points_from_text1(text1):
 
@@ -115,32 +118,48 @@ def evaluate_generated_answer(text1, text2, key_points):
     )
     return response.choices[0].message.content
 
-# Load CSV file
-input_csv = "input_data.csv"
-df = pd.read_csv(input_csv)
-
-results = []
-for index, row in df.iterrows():
+def process_row(row):
+    results = []
     text1 = str(row["StackOverflow Answer"]).strip()
     text2 = str(row["Previous RAG Answer"]).strip()
 
     if not text1 or not text2:
-        key_points = "N/A"
-        explanation = "Similarity Score: N/A\nReasoning: Missing Data"
-    else:
-        key_points = extract_key_points_from_text1(text1)
-        explanation = evaluate_generated_answer(text1, text2, key_points)
-       
-        explanation_soup = BeautifulSoup(explanation, 'html.parser')
-        accuracy_score = int(explanation_soup.find("accuracy_score").contents[0])
-        if accuracy_score >= 60:
-            rag_answer = "Y"
-        else:
-            rag_answer = "N"
+        return {
+            "ID": row["ID"],
+            "Key Points:": "N/A",
+            "LLM Method Result": "Similarity Score: N/A\nReasoning: Missing Data",
+            "RAG_Answer": "N/A",
+    }
+    
+    # send request in parellel:
+    key_points = extract_key_points_from_text1(text1)
+    explanation = evaluate_generated_answer(text1, text2, key_points)
+    
+    # explain the score:
+    explanation_soup = BeautifulSoup(explanation, 'html.parser')
+    accuracy_score = int(explanation_soup.find("accuracy_score").contents[0])
+    rag_answer = "Y" if accuracy_score >= 60 else "N"
 
-
-    results.append({"ID": row["ID"], "Key Points:": key_points, "LLM Method Result": explanation, "RAG_Answer": rag_answer})
     print(f"Finished ID {row['ID']}")
+    
+    return {
+        "ID": row["ID"],
+        "Key Points:": key_points,
+        "LLM Method Result": explanation,
+        "RAG_Answer": rag_answer,
+    }
+
+
+# read csv:
+input_csv = "input_data.csv"
+df = pd.read_csv(input_csv)
+
+# parellel:
+MAX_WORKERS = 10 # mind open ai rate limit
+with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    results = list(tqdm(executor.map(process_row, [row for _, row in df.iterrows()]), total=len(df), desc="Processing Rows"))
+
+# save to local:
 output_csv = "LLM_keypoint_results.csv"
 pd.DataFrame(results).to_csv(output_csv, index=False)
 
