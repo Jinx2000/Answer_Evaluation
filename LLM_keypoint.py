@@ -140,7 +140,7 @@ def process_row(row):
     accuracy_score = int(explanation_soup.find("accuracy_score").contents[0])
     rag_answer = "Y" if accuracy_score >= 60 else "N"
 
-    print(f"Finished ID {row['ID']}")
+    #print(f"Finished ID {row['ID']}")
     
     return {
         "ID": row["ID"],
