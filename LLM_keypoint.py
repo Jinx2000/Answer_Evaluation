@@ -8,6 +8,35 @@ os.environ["https_proxy"] = "http://localhost:7890"
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+input_csv = "input_data.csv"
+
+def save_keypoints():
+
+    key_points_list = list()
+    df = pd.read_csv(input_csv)
+
+    for index, row in df.iterrows():
+        text1 = str(row["StackOverflow Answer"]).strip()
+        text2 = str(row["Previous RAG Answer"]).strip()
+
+        if not text1 or not text2:
+            key_points = "N/A"
+            # explanation = "Similarity Score: N/A\nReasoning: Missing Data"
+        else:
+            key_points = extract_key_points_from_text1(text1)
+            # explanation = evaluate_generated_answer(text1, text2, key_points)
+            # explanation_soup = BeautifulSoup(explanation, 'html.parser')
+            # accuracy_score = int(explanation_soup.find("accuracy_score").contents[0])
+            # if accuracy_score >= 60:
+            #     rag_answer = "Y"
+            # else:
+            #     rag_answer = "N"
+
+        key_points_list.append(key_points)
+
+    df['Key Points'] = key_points_list
+    df.to_csv(input_csv, index=False)
+
 def extract_key_points_from_text1(text1):
 
     prompt = f"""
@@ -115,20 +144,25 @@ def evaluate_generated_answer(text1, text2, key_points):
     )
     return response.choices[0].message.content
 
+
+save_keypoints()
+exit(0)  # Testing Code, delete it when testing is over...
+
+
 # Load CSV file
-input_csv = "input_data.csv"
 df = pd.read_csv(input_csv)
 
 results = []
 for index, row in df.iterrows():
     text1 = str(row["StackOverflow Answer"]).strip()
     text2 = str(row["Previous RAG Answer"]).strip()
+    key_points = str(row["Key Points"]).strip()
 
     if not text1 or not text2:
-        key_points = "N/A"
+        # key_points = "N/A"
         explanation = "Similarity Score: N/A\nReasoning: Missing Data"
     else:
-        key_points = extract_key_points_from_text1(text1)
+        # key_points = extract_key_points_from_text1(text1)
         explanation = evaluate_generated_answer(text1, text2, key_points)
        
         explanation_soup = BeautifulSoup(explanation, 'html.parser')
@@ -141,6 +175,7 @@ for index, row in df.iterrows():
 
     results.append({"ID": row["ID"], "Key Points:": key_points, "LLM Method Result": explanation, "RAG_Answer": rag_answer})
     print(f"Finished ID {row['ID']}")
+
 output_csv = "LLM_keypoint_results.csv"
 pd.DataFrame(results).to_csv(output_csv, index=False)
 
