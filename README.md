@@ -1,5 +1,14 @@
 # Answer_Evaluation
- 
+
+## Usage
+
+When you need to generate the new key_points, please call function **save_keypoints()** in **main()**.
+
+Function **save_keypoints()** will generate the key points in file **input_data.csv**.
+
+You can directly evaluation the RAG answers by calling function **evaluate_RAG_answer()** in **main()**.
+
+
 # Update Log
 
 ## LLM_simulate_RAG_answer.py
