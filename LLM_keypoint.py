@@ -33,6 +33,7 @@ def save_keypoints():
             #     rag_answer = "N"
 
         key_points_list.append(key_points)
+        print(f"Finished ID {row['ID']}")
 
     df['Key Points'] = key_points_list
     df.to_csv(input_csv, index=False)
@@ -95,7 +96,7 @@ def extract_key_points_from_text1(text1):
     {text1}
     """
     response = openai.chat.completions.create(
-        model="gpt-4-turbo",
+        model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0
     )
@@ -138,45 +139,49 @@ def evaluate_generated_answer(text1, text2, key_points):
     """
 
     response = openai.chat.completions.create(
-        model="gpt-4-turbo",
+        model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0
     )
     return response.choices[0].message.content
 
 
-save_keypoints()
-exit(0)  # Testing Code, delete it when testing is over...
-
-
 # Load CSV file
-df = pd.read_csv(input_csv)
 
-results = []
-for index, row in df.iterrows():
-    text1 = str(row["StackOverflow Answer"]).strip()
-    text2 = str(row["Previous RAG Answer"]).strip()
-    key_points = str(row["Key Points"]).strip()
+def evaluate_RAG_answer():
 
-    if not text1 or not text2:
-        # key_points = "N/A"
-        explanation = "Similarity Score: N/A\nReasoning: Missing Data"
-    else:
-        # key_points = extract_key_points_from_text1(text1)
-        explanation = evaluate_generated_answer(text1, text2, key_points)
-       
-        explanation_soup = BeautifulSoup(explanation, 'html.parser')
-        accuracy_score = int(explanation_soup.find("accuracy_score").contents[0])
-        if accuracy_score >= 60:
-            rag_answer = "Y"
+
+    df = pd.read_csv(input_csv)
+
+    results = []
+    for index, row in df.iterrows():
+        text1 = str(row["StackOverflow Answer"]).strip()
+        text2 = str(row["Previous RAG Answer"]).strip()
+        key_points = str(row["Key Points"]).strip()
+
+        if not text1 or not text2:
+            # key_points = "N/A"
+            explanation = "Similarity Score: N/A\nReasoning: Missing Data"
         else:
-            rag_answer = "N"
+            # key_points = extract_key_points_from_text1(text1)
+            explanation = evaluate_generated_answer(text1, text2, key_points)
+        
+            explanation_soup = BeautifulSoup(explanation, 'html.parser')
+            accuracy_score = int(explanation_soup.find("accuracy_score").contents[0])
+            if accuracy_score >= 60:
+                rag_answer = "Y"
+            else:
+                rag_answer = "N"
 
 
-    results.append({"ID": row["ID"], "Key Points:": key_points, "LLM Method Result": explanation, "RAG_Answer": rag_answer})
-    print(f"Finished ID {row['ID']}")
+        results.append({"ID": row["ID"], "Key Points:": key_points, "LLM Method Result": explanation, "RAG_Answer": rag_answer})
+        print(f"Finished ID {row['ID']}")
 
-output_csv = "LLM_keypoint_results.csv"
-pd.DataFrame(results).to_csv(output_csv, index=False)
+    output_csv = "LLM_keypoint_results.csv"
+    pd.DataFrame(results).to_csv(output_csv, index=False)
 
-print(f"Comparison completed. Results saved to {output_csv}")
+    print(f"Comparison completed. Results saved to {output_csv}")
+
+if __name__ == "__main__":
+    # save_keypoints()
+    evaluate_RAG_answer()
