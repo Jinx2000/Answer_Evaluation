@@ -112,7 +112,7 @@ def evaluate_generated_answer(text1, text2, key_points):
     """
 
     response = openai.chat.completions.create(
-        model="gpt-4-turbo",
+        model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0
     )
@@ -121,7 +121,7 @@ def evaluate_generated_answer(text1, text2, key_points):
 def process_row(row):
     results = []
     text1 = str(row["StackOverflow Answer"]).strip()
-    text2 = str(row["Previous RAG Answer"]).strip()
+    text2 = str(row["gpt_Generated_Response"]).strip()
 
     if not text1 or not text2:
         return {
