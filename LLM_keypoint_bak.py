@@ -10,6 +10,34 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 input_csv = "input_data.csv"
 
+def save_keypoints():
+
+    key_points_list = list()
+    df = pd.read_csv(input_csv)
+
+    for index, row in df.iterrows():
+        text1 = str(row["StackOverflow Answer"]).strip()
+        text2 = str(row["Previous RAG Answer"]).strip()
+
+        if not text1 or not text2:
+            key_points = "N/A"
+            # explanation = "Similarity Score: N/A\nReasoning: Missing Data"
+        else:
+            key_points = extract_key_points_from_text1(text1)
+            # explanation = evaluate_generated_answer(text1, text2, key_points)
+            # explanation_soup = BeautifulSoup(explanation, 'html.parser')
+            # accuracy_score = int(explanation_soup.find("accuracy_score").contents[0])
+            # if accuracy_score >= 60:
+            #     rag_answer = "Y"
+            # else:
+            #     rag_answer = "N"
+
+        key_points_list.append(key_points)
+        print(f"Finished ID {row['ID']}")
+
+    df['Key Points'] = key_points_list
+    df.to_csv(input_csv, index=False)
+
 def extract_key_points_from_text1(text1):
 
     prompt = f"""
@@ -74,54 +102,29 @@ def extract_key_points_from_text1(text1):
     )
     return response.choices[0].message.content.strip()
 
-def save_keypoints():
-
-    """
-    Save key points derived from post answer and RAG answer into the original file "input_data.csv".
-    """
-    key_points_list_1 = list()
-    key_points_list_2 = list()
-    df = pd.read_csv(input_csv)
-
-    for index, row in df.iterrows():
-        text1 = str(row["StackOverflow Answer"]).strip()
-        text2 = str(row["Previous RAG Answer"]).strip()
-
-        if not text1 or not text2:
-            key_points_1 = "N/A"
-            key_points_2 = "N/A"
-
-        else:
-            key_points_1 = extract_key_points_from_text1(text1)
-            key_points_2 = extract_key_points_from_text1(text2)
-
-        key_points_list_1.append(key_points_1)
-        key_points_list_2.append(key_points_2)
-        print(f"Finished ID {row['ID']}")
-
-    df['Key Points'] = key_points_list_1
-    df['Key Points_answer'] = key_points_list_2
-    df.to_csv(input_csv, index=False)
+def evaluate_generated_answer(text1, text2, key_points):
 
 
-def evaluate_generated_answer(text1, text2):
-
-    
     prompt = f"""
     <evaluation>
         <instructions>
             You are an expert in Cloud-native. You are evaluating **an alternate answer (Text 2)** against a **verified correct answer** (Text 1).
             **Text 1** should always be treated as definitively correct.
-            Each Text contains serveral key points. And each key points consists of a description and specific codes snippets. The description is usually a normal sentence, while the code consists of a series of words. Please try to distinguish them.
-            You need to compare the key points in two texts. And score them according to the following rules. The scoring range is from 0 to 100.
-            Rule 1: If any key point in Text 2 is similar to the key point in Text 1, give it a score of at least 60. On this basis, the more similar the two Text are, the higher the score.
-            Rule 2: You should focus on code snippets comparison rather than description comparison. For the code snippet comparison part, as long as there are some key words that are the same between the two key points, we consider the key points to be similar.
-            Rule 2: The final score is the sum of the scores for each key point(with a maximum of 100 points). You should give the final score in label <accuracy_score> below.
+            Text contains a description of solution and specific codes snippets. The description is usually a normal sentence, while the code consists of a series of words. Please try to distinguish them.
+            Please assign an accuracy score (0 to 100 points) for Text 2 according to rules below.
+            Use Key points from Text 1 to help. Check if Text 2 covers these key points. 
+            Rule 1: The evaluation is divided into two parts, one is the key point evaluation(0 to 80 points), and the other is the general text evaluation(0 to 20 points).
+            Rule 2: In key point evaluation(0 to 80 points). Only focus on the code part, as long as the code snippets in the text have two or more words that are the same as the code in any key point, we can give it a score of 80. If not, give it a score not exceeding 20.
+            Rule 3: In general text evaluation(0 to 20 points), for other content unrelated to key points, the more similar the Text 2 is to Text 1, the higher the score.
+            The final score is the sum of the scores from two parts. You should give the final score in label <accuracy_score> below.
+            
+            1. Key Points from Text 1:
+            {key_points}
 
             2. Provide reasoning:
             - Show how many points the Text 2 receive in each of the two parts.
             - What Text 2 got right.
-            - Any dissimilar key points.
+            - Any missing/incorrect key points.
             - Any misleading statements.
         </instructions>
 
@@ -143,20 +146,25 @@ def evaluate_generated_answer(text1, text2):
     return response.choices[0].message.content
 
 
+# Load CSV file
+
 def evaluate_RAG_answer():
+
+
     df = pd.read_csv(input_csv)
 
     results = []
     for index, row in df.iterrows():
+        text1 = str(row["StackOverflow Answer"]).strip()
+        text2 = str(row["Previous RAG Answer"]).strip()
         key_points = str(row["Key Points"]).strip()
-        key_points_RAG = str(row["Key Points_answer"]).strip()
 
-        if not key_points or not key_points_RAG:
+        if not text1 or not text2:
             # key_points = "N/A"
             explanation = "Similarity Score: N/A\nReasoning: Missing Data"
         else:
             # key_points = extract_key_points_from_text1(text1)
-            explanation = evaluate_generated_answer(key_points, key_points_RAG)
+            explanation = evaluate_generated_answer(text1, text2, key_points)
         
             explanation_soup = BeautifulSoup(explanation, 'html.parser')
             accuracy_score = int(explanation_soup.find("accuracy_score").contents[0])
@@ -166,7 +174,7 @@ def evaluate_RAG_answer():
                 rag_answer = "N"
 
 
-        results.append({"ID": row["ID"], "Key Points:": key_points, "RAG Key Points": key_points_RAG, "LLM Method Result": explanation, "RAG_Answer": rag_answer})
+        results.append({"ID": row["ID"], "Key Points:": key_points, "LLM Method Result": explanation, "RAG_Answer": rag_answer})
         print(f"Finished ID {row['ID']}")
 
     output_csv = "LLM_keypoint_results.csv"
