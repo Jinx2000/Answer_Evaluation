@@ -1,5 +1,5 @@
-ID,StackOverflow Answer,Previous RAG Answer,Previous Result,Question Body,Key Points
-2.0,"Since your application ""real"" root is /my/new/context, you can rewrite every incoming request matching the /dev/jira URI using Nginx's AppRoot:
+ID,StackOverflow Answer,Previous RAG Answer,Previous Result,Question Body,Key Points,Key Points_answer
+2,"Since your application ""real"" root is /my/new/context, you can rewrite every incoming request matching the /dev/jira URI using Nginx's AppRoot:
 
 If the Application Root is exposed in a different path and needs to be redirected, set the annotation nginx.ingress.kubernetes.io/app-root to redirect requests for /.
 
@@ -55,8 +55,34 @@ spec:
           servicePort: 80
 ```",Y,,"### **Key Points:**
 1. Set the app-root annotation to redirect requests for the application root, ```nginx.ingress.kubernetes.io/app-root: /my/new/context```.
-2. Define Ingress rules for specific paths without needing capture groups, as shown in the paths configuration for `/dev/jira` and `/prod/jira`."
-3.0,"Create an Ingress rule with a app-root annotation:
+2. Define Ingress rules for specific paths without needing capture groups, as shown in the paths configuration for `/dev/jira` and `/prod/jira`.","### **Key Points:**
+1. Use the `nginx.ingress.kubernetes.io/app-root` annotation to redirect requests from the root path to the application's context path. Code snippet: ```nginx.ingress.kubernetes.io/app-root: /my/new/context```.
+2. Adjust the Ingress configuration to include the necessary annotations and specify the backend service for different paths. Code snippet:
+   ```yaml
+   apiVersion: extensions/v1beta1
+   kind: Ingress
+   metadata:
+     namespace: {{ .Values.global.app }}
+     name: jira-ingress
+     annotations:
+       kubernetes.io/ingress.class: ""nginx""
+       nginx.ingress.kubernetes.io/ssl-redirect: ""false""
+       nginx.ingress.kubernetes.io/app-root: /my/new/context
+   spec:
+     rules:
+     - host: myhost
+       http:
+         paths:
+         - path: /dev/jira(/|$)(.*)
+           backend:
+             serviceName: jira
+             servicePort: 80
+         - path: /prod/jira(/|$)(.*)
+           backend:
+             serviceName: jira
+             servicePort: 80
+   ```"
+3,"Create an Ingress rule with a app-root annotation:
 
 apiVersion: extensions/v1beta1
 kind: Ingress
@@ -133,8 +159,32 @@ spec:
                   number: 8888
 ```",Y,,"### **Key Points:**
 1. Create an Ingress rule with an app-root annotation to redirect requests to a specific path: ```nginx.ingress.kubernetes.io/app-root: /app1```.
-2. Create an Ingress rule with a rewrite annotation to modify the request path based on captured groups: ```nginx.ingress.kubernetes.io/rewrite-target: /$2```."
-4.0,"As you mentioned, there is no error in the log files, and everything looks normal from your perspective. I may suggest to tune up ingress using annotations tags. I've checked documentation of ingress-nginx and found that below annotations may help a bit.
+2. Create an Ingress rule with a rewrite annotation to modify the request path based on captured groups: ```nginx.ingress.kubernetes.io/rewrite-target: /$2```.","### **Key Points:**
+1. Use NGINX annotations to rewrite incoming requests to a desired subpath on the backend service, with the code snippet: 
+   ```yaml
+   nginx.ingress.kubernetes.io/rewrite-target: /$2
+   ```
+2. Configure the Ingress resource with regex support and specify the backend service, as shown in the following YAML:
+   ```yaml
+   apiVersion: networking.k8s.io/v1
+   kind: Ingress
+   metadata:
+     name: jupyter-notebook-ingress
+     annotations:
+       nginx.ingress.kubernetes.io/use-regex: ""true""
+   spec:
+     rules:
+       - host: jptrntbk.MYDOMAIN.com
+         http:
+           paths:
+             - path: /lab(/|$)(.*)
+               backend:
+                 service:
+                   name: jupyter-notebook-service
+                   port:
+                     number: 8888
+   ```"
+4,"As you mentioned, there is no error in the log files, and everything looks normal from your perspective. I may suggest to tune up ingress using annotations tags. I've checked documentation of ingress-nginx and found that below annotations may help a bit.
 
 In some scenarios, the exposed URL in the backend service differs from the specified path in the Ingress rule. Without a rewrite, any request will return 404. Set the annotation
 
@@ -217,8 +267,10 @@ spec:
 ```",Y,,"### **Key Points:**
 1. Set the rewrite annotation to ensure the backend service receives the correct path, preventing 404 errors: ```nginx.ingress.kubernetes.io/rewrite-target: /```.
 2. Use the app-root annotation to redirect requests for the application root if exposed on a different path: ```nginx.ingress.kubernetes.io/app-root: /app1```.
-3. Add a base URL annotation to prepend a base tag in the header of the returned HTML for applications with relative links: ```nginx.ingress.kubernetes.io/add-base-url```."
-5.0,"apiVersion: extensions/v1beta1
+3. Add a base URL annotation to prepend a base tag in the header of the returned HTML for applications with relative links: ```nginx.ingress.kubernetes.io/add-base-url```.","### **Key Points:**
+1. Configure Ingress with the correct annotations for NGINX and rewrite target, ```nginx.ingress.kubernetes.io/rewrite-target: /```.
+2. Specify `pathType: Prefix` for subpath matching in the Ingress rules for both Metabase and Jenkins services."
+5,"apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
   name: spare-ingress-dev
@@ -297,13 +349,13 @@ spec:
     - port: 5200
       targetPort: 5200
 ```",Y,,"### **Key Points:**
-1. Configure Ingress with regex support and app-root annotation for proper routing, including the following annotations: 
+1. Configure Ingress with regex support and app-root annotation by adding the following annotations: 
    ```yaml
    kubernetes.io/ingress.class: nginx
    nginx.ingress.kubernetes.io/use-regex: ""true""
    nginx.ingress.kubernetes.io/app-root: /
    ```
-2. Define multiple paths in the Ingress rules to route requests to different backend services based on the URL pattern:
+2. Define multiple paths for the Ingress rules to route traffic to different services based on the URL pattern:
    ```yaml
    - path: /api/v1.0/auth/(.+)
      backend:
@@ -317,8 +369,22 @@ spec:
      backend:
        serviceName: cluster-category-ip
        servicePort: 5200
+   ```","### **Key Points:**
+1. Update the Ingress definition to include the correct rewrite-target and use-regex annotations for proper path redirection: 
+   ```yaml
+   nginx.ingress.kubernetes.io/rewrite-target: /$2
+   nginx.ingress.kubernetes.io/use-regex: ""true""
+   ```
+2. Define the Ingress resource with specific paths for redirection, ensuring that requests to `/category/` are routed to the appropriate backend service:
+   ```yaml
+   - path: /category(/|$)(.*)
+     backend:
+       service:
+         name: cluster-category-ip
+         port:
+           number: 5200
    ```"
-6.0,"Given that it seems you don't have an Ingress Controller installed, if you have the aws cloud-provider configured in your K8S cluster you can follow this guide to install the Nginx Ingress controller using Helm.
+6,"Given that it seems you don't have an Ingress Controller installed, if you have the aws cloud-provider configured in your K8S cluster you can follow this guide to install the Nginx Ingress controller using Helm.
 
 By the end of the guide you should have a load balancer created for your ingress controller, point your Route53 record to it and create an Ingress that uses your grafana service. Example:
 
@@ -387,8 +453,31 @@ spec:
              serviceName: grafana
              servicePort: 80
            path: /
+   ```","### **Key Points:**
+1. Set up an Ingress resource to forward traffic from a domain in Route53 to a Grafana pod, using the following configuration:
+   ```yaml
+   apiVersion: networking.k8s.io/v1
+   kind: Ingress
+   metadata:
+     name: grafana-ingress
+     namespace: test
+     annotations:
+       nginx.ingress.kubernetes.io/rewrite-target: /
+   spec:
+     ingressClassName: nginx
+     rules:
+     - host: grafana.something.com
+       http:
+         paths:
+         - path: /
+           pathType: Prefix
+           backend:
+             service:
+               name: grafana
+               port:
+                 number: 80
    ```"
-7.0,"If you need to use the server-snippet solution. Something similar to the following will add a custom location block to the Nginx ingress config. This is especially useful if you have other custom requirements for the Nginx ingress.
+7,"If you need to use the server-snippet solution. Something similar to the following will add a custom location block to the Nginx ingress config. This is especially useful if you have other custom requirements for the Nginx ingress.
 
 metadata:
   annotations:
@@ -439,15 +528,34 @@ spec:
   type: ExternalName
   externalName: s3.eu-central-1.amazonaws.com
 ```",Y,,"### **Key Points:**
-1. To add a custom location block to the Nginx ingress config, use the server-snippet annotation: 
-   ```nginx.ingress.kubernetes.io/server-snippet: |
-      location ""/img/"" {
-        proxy_pass http://s3.eu-central-1.amazonaws.com/mybucket123/pictures/;
-        proxy_set_header Host s3.eu-central-1.amazonaws.com;
-      }```
-2. For debugging requests to a reverse proxy endpoint with limited logging, use the mirror-target annotation: 
-   ```nginx.ingress.kubernetes.io/mirror-target: ""http://my-debug-target/""```"
-8.0,"Add the following annotation to the kibana ingress so that nginx-ingress interprets the /kibana(/|$)(.*) path using regex:
+1. To add a custom location block to the Nginx ingress config, use the server-snippet annotation with the following code:
+   ```yaml
+   nginx.ingress.kubernetes.io/server-snippet: |
+     location ""/img/"" {
+       proxy_pass http://s3.eu-central-1.amazonaws.com/mybucket123/pictures/;
+       proxy_set_header Host s3.eu-central-1.amazonaws.com;
+     }
+   ```
+2. For debugging requests when reverse proxying to an endpoint with limited logging, use the mirror-target annotation:
+   ```yaml
+   nginx.ingress.kubernetes.io/mirror-target: ""http://my-debug-target/""
+   ```","### **Key Points:**
+1. Create a Kubernetes Ingress resource with a custom `server-snippet` to set the `Host` header for S3 requests: 
+   ```yaml
+   nginx.ingress.kubernetes.io/server-snippet: |
+     proxy_set_header Host s3.eu-central-1.amazonaws.com;
+   ```
+2. Ensure the `s3-proxy` Service points to the S3 endpoint using an `ExternalName` type:
+   ```yaml
+   apiVersion: v1
+   kind: Service
+   metadata:
+     name: s3-proxy
+   spec:
+     type: ExternalName
+     externalName: s3.eu-central-1.amazonaws.com
+   ```"
+8,"Add the following annotation to the kibana ingress so that nginx-ingress interprets the /kibana(/|$)(.*) path using regex:
 
  nginx.ingress.kubernetes.io/use-regex: ""true""
 Additional detail: To let kibana know that it runs on /kibana path, add the following env variable to the kibana pod/deployment:
@@ -482,8 +590,23 @@ spec:
                   number: 5601
 ```",Y,,"### **Key Points:**
 1. Add the annotation to the Kibana Ingress to enable regex path interpretation: ```nginx.ingress.kubernetes.io/use-regex: ""true""```.
-2. Set the environment variable in the Kibana pod/deployment to specify the base path: ```- name: SERVER_BASEPATH value: /kibana```."
-9.0,"apiVersion: networking.k8s.io/v1beta1
+2. Set the environment variable in the Kibana pod/deployment to specify the base path: ```- name: SERVER_BASEPATH value: /kibana```.","### **Key Points:**
+1. Adjust the Ingress configuration for the Kibana service to handle redirects properly by using the following annotations: 
+   ```yaml
+   nginx.ingress.kubernetes.io/use-regex: ""true""
+   nginx.ingress.kubernetes.io/rewrite-target: /kibana/
+   nginx.ingress.kubernetes.io/ssl-redirect: ""false""
+   ```
+2. Define the Ingress rule to preserve the `/kibana` path and direct traffic to the Kibana service on port 5601:
+   ```yaml
+   path: /kibana(/|$)(.*)
+   backend:
+     service:
+       name: kibana
+       port:
+         number: 5601
+   ```"
+9,"apiVersion: networking.k8s.io/v1beta1
 kind: Ingress
 metadata:
   annotations:
@@ -544,11 +667,30 @@ Debugging and troubleshooting steps:
 4. Use `kubectl describe ingress load-balancer` to check the applied annotations and paths to ensure they match the intended configuration.
 5. If issues persist, review NGINX Ingress Controller logs and NGINX configuration to troubleshoot further.
 ",Y,,"### **Key Points:**
-1. Enable regex in Ingress annotations and set a rewrite target to capture and redirect paths, ```nginx.ingress.kubernetes.io/use-regex: ""true""``` and ```nginx.ingress.kubernetes.io/rewrite-target: /$2```."
-10.0,"We have 2 issues here
+1. Enable regex in Ingress annotations and set a rewrite target to capture and redirect traffic, using the code snippet: 
+   ```yaml
+   nginx.ingress.kubernetes.io/use-regex: ""true""
+   nginx.ingress.kubernetes.io/rewrite-target: /$2
+   ```
+2. Define the Ingress rule to match the desired path and backend service, using the code snippet:
+   ```yaml
+   path: /something(/|$)(.*)
+   backend:
+     serviceName: http-svc
+     servicePort: 80
+   ```","### **Key Points:**
+1. Use the NGINX Ingress rewrite annotation to remove the routing path `/test` and forward requests to the backend service correctly. The relevant code snippet is:
+   ```yaml
+   nginx.ingress.kubernetes.io/rewrite-target: /$2
+   ```
+2. Ensure to specify `pathType: ImplementationSpecific` in the Ingress configuration for best practices. The relevant code snippet is:
+   ```yaml
+   pathType: ImplementationSpecific
+   ```"
+10,"We have 2 issues here
 
-Ingress route
-SignalR with LoadBalancer
+1. Ingress route
+2. SignalR with LoadBalancer
 Ingress route
 nginx.ingress.kubernetes.io/rewrite-target: /$1
 Rewrite has $1 it means to place first capturing group, but what is it? Well it's something that can be used only when nginx.ingress.kubernetes.io/use-regex is added, so it just doesn't make sens, when request is send to get for file like /styles.css it would end up with something like /$1styles.css in Blazor app or anything else but not valid from your app point of view.
@@ -694,7 +836,7 @@ Debugging Steps:
 
 By implementing the corrected YAML configurations and following the suggested debugging steps, you should be able to address the issues faced with deploying the Blazor Server app on Kubernetes.
 ",Y,,"### **Key Points:**
-1. To configure a basic Ingress for a Blazor app without regex, use the following annotations to ensure proper routing:
+1. To configure an Ingress route for a Blazor app without regex, use the following annotations to ensure proper session handling and rewrite behavior:
    ```yaml
    nginx.ingress.kubernetes.io/rewrite-target: /
    nginx.ingress.kubernetes.io/affinity: ""cookie""
@@ -703,13 +845,86 @@ By implementing the corrected YAML configurations and following the suggested de
    nginx.ingress.kubernetes.io/session-cookie-max-age: ""14400""
    ```
 
-2. For an Ingress configuration that utilizes regex for path matching, enable regex and use a capturing group in the path, as shown below:
+2. For an Ingress route using regex, enable regex support and define a capturing group in the path to correctly rewrite requests:
    ```yaml
    nginx.ingress.kubernetes.io/use-regex: ""true""
    nginx.ingress.kubernetes.io/rewrite-target: /$1
+   ```","### **Key Points:**
+1. **Deployment Configuration**: Define a Deployment for the Blazor application with 3 replicas and necessary container settings.  
+   ```yaml
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: blazor
+   spec:
+     replicas: 3
+     selector:
+       matchLabels:
+         app: blazor
+     template:
+       metadata:
+         labels:
+           app: blazor
+       spec:
+         containers:
+         - name: blazor
+           image: registry/...
+           ports:
+           - containerPort: 80
+           imagePullSecrets:
+           - name: test-webapp
    ```
-   Ensure the path is defined as `/(.*)` to capture the desired segments correctly."
-11.0,"Solved: Chrome was overlooking the etc hosts file, so I did the following:
+
+2. **Service Exposure**: Create a Service of type NodePort to expose the Blazor application, mapping the container port to a node port for external access.  
+   ```yaml
+   apiVersion: v1
+   kind: Service
+   metadata:
+     labels:
+       app: blazor
+     name: blazor
+     namespace: default
+   spec:
+     ports:
+     - nodePort: 30500
+       port: 80
+       protocol: TCP
+       targetPort: 80
+     selector:
+       app: blazor
+     type: NodePort
+   ```
+
+3. **Ingress Configuration**: Set up an Ingress resource with annotations for session management and path rewriting to route external traffic to the Blazor app. Ensure to include `pathType: Prefix`.  
+   ```yaml
+   apiVersion: networking.k8s.io/v1
+   kind: Ingress
+   metadata:
+     name: blazor-ingress
+     annotations:
+       nginx.ingress.kubernetes.io/rewrite-target: /
+       nginx.ingress.kubernetes.io/affinity: cookie
+       nginx.ingress.kubernetes.io/session-cookie-name: affinity
+       nginx.ingress.kubernetes.io/session-cookie-expires: ""14400""
+       nginx.ingress.kubernetes.io/session-cookie-max-age: ""14400""
+   spec:
+     rules:
+     - host: blazor.test
+       http:
+         paths:
+         - path: /
+           pathType: Prefix
+           backend:
+             service:
+               name: blazor
+               port:
+                 number: 80
+   ```
+
+4. **Debugging Steps**: Verify the deployment and service status, check network policies, and investigate Ingress controller logs for routing issues.  
+   - Use `kubectl describe <resource>` for troubleshooting.
+   - Ensure WebSocket protocols are enabled in the Ingress controller configuration."
+11,"Solved: Chrome was overlooking the etc hosts file, so I did the following:
 
 Switched to Firefox and instantly the URLs were working.
 Added annotations to denote the class:
@@ -784,8 +999,72 @@ spec:
 ```",N,,"### **Key Points:**
 1. Use Firefox as an alternative browser if Chrome is not recognizing the etc hosts file.
 2. Add an annotation to specify the ingress class: ```kubernetes.io/ingress.class: nginx```.
-3. Add an annotation to ensure requests are redirected to SSL: ```nginx.ingress.kubernetes.io/ssl-redirect: ""true""```."
-12.0,"According to my research I found the following way.
+3. Add an annotation to ensure requests are redirected to SSL: ```nginx.ingress.kubernetes.io/ssl-redirect: ""true""```.","### **Key Points:**
+1. **Deployment Configuration:** Ensure the Deployment is correctly defined with the appropriate image and container port.  
+   ```yaml
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     labels:
+       app: api
+     name: api
+   spec:
+     replicas: 1
+     selector:
+       matchLabels:
+         app: api
+     template:
+       metadata:
+         labels:
+           app: api
+       spec:
+         containers:
+         - name: api
+           image: localhost:5000/api:2.3
+           ports:
+           - containerPort: 80
+   ```
+
+2. **Service Configuration:** Define the Service to expose the Deployment, ensuring it uses NodePort and targets the correct port.  
+   ```yaml
+   apiVersion: v1
+   kind: Service
+   metadata:
+     name: api
+   spec:
+     selector:
+       app: api
+     ports:
+       - protocol: TCP
+         port: 80
+         targetPort: 80
+     type: NodePort
+   ```
+
+3. **Ingress Configuration:** Set up the Ingress resource to route traffic to the Service, including TLS configuration if necessary.  
+   ```yaml
+   apiVersion: networking.k8s.io/v1beta1
+   kind: Ingress
+   metadata:
+     name: tls-ingress
+   spec:
+     tls:
+       - secretName: oaky-tls
+         hosts:
+           - api.localhost
+     rules:
+       - host: api.localhost
+         http:
+           paths:
+             - path: /
+               pathType: Prefix
+               backend:
+                 service:
+                   name: api
+                   port:
+                     number: 80
+   ```"
+12,"According to my research I found the following way.
 
 Remove the redirection from an ASP.NET Core app when we host it to kubernetes.
 Apply the redirect to Ingress itself. By adding the following 2 lines to it:
@@ -841,10 +1120,10 @@ spec:
             name: first-service
             port:
               number: 8080",Y,,"### **Key Points:**
-1. Remove redirection from the ASP.NET Core app and apply it to Ingress by adding the following annotations: 
-   ```nginx.ingress.kubernetes.io/force-ssl-redirect: ""true""```
+1. Remove redirection from the ASP.NET Core app and apply it to Ingress by adding the following annotations:  
+   ```nginx.ingress.kubernetes.io/force-ssl-redirect: ""true""```  
    ```nginx.ingress.kubernetes.io/ssl-redirect: ""true""```
-2. Update the Ingress configuration to include the necessary annotations and specify the backend service:
+2. Update the Ingress configuration to include the necessary annotations and specify the backend service:  
    ```yaml
    apiVersion: networking.k8s.io/v1
    kind: Ingress
@@ -867,8 +1146,28 @@ spec:
                name: first-service
                port:
                  number: 8080
+   ```","### **Key Points:**
+1. Enable HTTP to HTTPS redirection in NGINX Ingress by setting the annotation `nginx.ingress.kubernetes.io/ssl-redirect: ""true""`.
+   ```yaml
+   nginx.ingress.kubernetes.io/ssl-redirect: ""true""
+   ```
+2. Configure the Ingress resource with TLS settings and specify the backend service.
+   ```yaml
+   tls:
+   - secretName: ssl
+   rules:
+   - host: your-hostname.com
+     http:
+       paths:
+       - pathType: Prefix
+         path: /
+         backend:
+           service:
+             name: first-service
+             port:
+               number: 8080
    ```"
-13.0,"On ingress-nginx you can use the nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""  annotation and point it to the HTTPS port on the service.
+13,"On ingress-nginx you can use the nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""  annotation and point it to the HTTPS port on the service.
 
 This is ingress controller specific and other ingress controllers might not provide the option (or provide an option that works differently)
 
@@ -929,8 +1228,18 @@ By following the provided configuration and guidelines, you should be able to en
    - To define SSL/TLS versions: 
      ```nginx.ingress.kubernetes.io/proxy-ssl-protocols```
    - For SNI passthrough: 
-     ```nginx.ingress.kubernetes.io/proxy-ssl-server-name```"
-14.0,"You should have to use the relative path in backend or HTML if you are using that.
+     ```nginx.ingress.kubernetes.io/proxy-ssl-server-name```","### **Key Points:**
+1. Enable HTTPS communication between the load balancer and backend service by using the annotation `nginx.ingress.kubernetes.io/backend-protocol: ""https""`.  
+   ```yaml
+   annotations:
+     nginx.ingress.kubernetes.io/backend-protocol: ""https""
+   ```
+2. Configure TLS with a secret for secure communication.  
+   ```yaml
+   tls:
+   - secretName: testsecret
+   ```"
+14,"You should have to use the relative path in backend or HTML if you are using that.
 
 However you can do one thing
 
@@ -992,8 +1301,18 @@ spec:
          location = /core/ {
            proxy_pass http://[hostname]/nextcloud/;
          }
+   ```","### **Key Points:**
+1. Update the Ingress configuration to handle subpaths for Nextcloud, ensuring correct path rewriting with the annotation: ```nginx.ingress.kubernetes.io/rewrite-target: /$2```.
+2. Define the Ingress rule to match the path for Nextcloud, allowing access under `www.myserver.com/nextcloud` with the following configuration:
+   ```yaml
+   path: /nextcloud(/|$)(.*)
+   backend:
+     service:
+       name: nextcloud
+       port:
+         number: 80
    ```"
-15.0,"It's possible to achieve what you want, however you will need to use Nginx Ingress to do that, as you will need to use specific annotation - nginx.ingress.kubernetes.io/upstream-vhost.
+15,"It's possible to achieve what you want, however you will need to use Nginx Ingress to do that, as you will need to use specific annotation - nginx.ingress.kubernetes.io/upstream-vhost.
 
 It was well described in this Github issue based on storage.googleapis.com.
 
@@ -1074,8 +1393,38 @@ spec:
 3. If using HTTP instead of HTTPS, change the service port to 80 and remove the backend protocol annotation. Code snippet:
    ```yaml
    servicePort: 80
+   ```","### **Key Points:**
+1. Create an ExternalName Service to forward traffic to an external domain (e.g., google.com): 
+   ```yaml
+   apiVersion: v1
+   kind: Service
+   metadata:
+     name: test-srv
+   spec:
+     type: ExternalName
+     externalName: google.com
+   ```
+
+2. Configure an Ingress resource to redirect requests from a specific path to the ExternalName Service: 
+   ```yaml
+   apiVersion: networking.k8s.io/v1beta1
+   kind: Ingress
+   metadata:
+     name: test-ingress
+   spec:
+     rules:
+     - host: abc.company.com
+       http:
+         paths:
+         - path: /google
+           pathType: ImplementationSpecific
+           backend:
+             service:
+               name: test-srv
+               port:
+                 number: 80
    ```"
-16.0,"Apparently this question is still getting traffic, so I feel like I should update it. I'm no longer using the nginx ingress, so I can't verify this works. According to https://kubernetes.github.io/ingress-nginx/user-guide/ingress-path-matching/:
+16,"Apparently this question is still getting traffic, so I feel like I should update it. I'm no longer using the nginx ingress, so I can't verify this works. According to https://kubernetes.github.io/ingress-nginx/user-guide/ingress-path-matching/:
 
 The ingress controller supports case insensitive regular expressions in the spec.rules.http.paths.path field. This can be enabled by setting the nginx.ingress.kubernetes.io/use-regex annotation to true (the default is false).
 
@@ -1176,8 +1525,11 @@ spec:
 
 By following these steps, you should be able to set up a Kubernetes Ingress rule with a regex path using the nginx ingress controller effectively.",Y,,"### **Key Points:**
 1. Enable case insensitive regular expressions in Ingress by setting the annotation: ```nginx.ingress.kubernetes.io/use-regex: ""true""```.
-2. Use the tilde (~) to prepend paths for regex matching in Ingress rules, e.g., ```path: ~ /t[a-z]a```."
-17.0,"limit-rps is a local rate limit settings that is applied on a specific ingress object rather than in a config map provided to the ingress controller.
+2. Use the tilde (~) to prepend paths for regex matching in Ingress rules, as shown in the example: ```path: ~ /t[a-z]a```.","### **Key Points:**
+1. Enable regex path matching by adding the annotation, ```nginx.ingress.kubernetes.io/use-regex: ""true""```.
+2. Rewrite the URI based on the regex match using the annotation, ```nginx.ingress.kubernetes.io/rewrite-target: /$1```.
+3. Set the `pathType` to `ImplementationSpecific` for each path in the Ingress configuration."
+17,"limit-rps is a local rate limit settings that is applied on a specific ingress object rather than in a config map provided to the ingress controller.
 
 It will limit the number of requests per second from an IP adress:
 
@@ -1243,8 +1595,8 @@ Debugging and Troubleshooting:
 5. Check the NGINX Ingress Controller documentation for any specific troubleshooting steps related to rate limiting configurations.
 
 By following these steps, the user should be able to effectively apply rate limiting using NGINX Ingress in their AKS environment.",Y,,"### **Key Points:**
-1. Apply local rate limiting on an ingress object using the annotation, ```nginx.ingress.kubernetes.io/limit-rps: 10```, to limit requests to 10 per second from a given IP address.
-2. Example ingress configuration with rate limiting:
+1. Apply local rate limiting on an Ingress object using the annotation, ```nginx.ingress.kubernetes.io/limit-rps: 10```, to limit requests to 10 per second from a single IP address.
+2. Include the rate limit configuration in the Ingress definition under metadata.annotations as shown below:
    ```yaml
    apiVersion: networking.k8s.io/v1
    kind: Ingress
@@ -1264,8 +1616,10 @@ By following these steps, the user should be able to effectively apply rate limi
                name: test
                port:
                  number: 80
-   ```"
-18.0,"Ingress path matching can be enabled by setting the
+   ```","### **Key Points:**
+1. Set rate limiting to 10 requests per second using the annotation, ```nginx.ingress.kubernetes.io/limit-rps: ""10""```.
+2. Configure burst limit with a multiplier of 5, resulting in a burst limit of 50 requests, using the annotation, ```nginx.ingress.kubernetes.io/limit-burst-multiplier: ""5""```."
+18,"Ingress path matching can be enabled by setting the
 
 nginx.ingress.kubernetes.io/use-regex annotation to true .
 
@@ -1352,15 +1706,94 @@ spec:
                 number: 80
           path: /
           pathType: Prefix",Y,,"### **Key Points:**
-1. Enable regex path matching by setting the `nginx.ingress.kubernetes.io/use-regex` annotation to true.  
+1. Enable regex path matching by setting the annotation `nginx.ingress.kubernetes.io/use-regex` to true.  
+   Code snippet: 
    ```yaml
    nginx.ingress.kubernetes.io/use-regex: ""true""
    ```
-2. Define an Ingress rule with a regex path for backend service routing.  
+2. Define an Ingress resource with a regex path for routing.  
+   Code snippet: 
    ```yaml
-   path: /foo/.*
+   apiVersion: networking.k8s.io/v1
+   kind: Ingress
+   metadata:
+     name: test-ingress
+     annotations:
+       nginx.ingress.kubernetes.io/use-regex: ""true""
+   spec:
+     ingressClassName: nginx
+     rules:
+     - host: test.com
+       http:
+         paths:
+         - path: /foo/.*
+           pathType: Prefix
+           backend:
+             service:
+               name: test
+               port:
+                 number: 80
+   ```","### **Key Points:**
+1. Create an Ingress resource for the current frontend service with regex support and TLS configuration, using the following code:
+   ```yaml
+   apiVersion: networking.k8s.io/v1
+   kind: Ingress
+   metadata:
+     name: current-frontend
+     annotations:
+       nginx.ingress.kubernetes.io/use-regex: ""true""
+       kubernetes.io/ingress.class: nginx
+   spec:
+     tls:
+       - hosts:
+         - my.domain.com
+         secretName: tls-secret
+     rules:
+       - host: my.domain.com
+         http:
+           paths:
+             - backend:
+                 service:
+                   name: current-frontend
+                   port:
+                     number: 80
+               path: /(.+)
+               pathType: Prefix
+   ```
+
+2. Create a new Ingress resource for a new service with TLS configuration and multiple paths, using the following code:
+   ```yaml
+   apiVersion: networking.k8s.io/v1
+   kind: Ingress
+   metadata:
+     name: new-service
+     annotations:
+       kubernetes.io/ingress.class: nginx
+   spec:
+     tls:
+       - hosts:
+         - my.domain.com
+         secretName: tls-secret
+     rules:
+       - host: my.domain.com
+         http:
+           paths:
+           - backend:
+               service:
+                 name: new-service
+                 port:
+                   number: 80
+             path: /someendpoint
+             pathType: ImplementationSpecific
+           - backend:
+               service:
+                 name: new-service
+                 port:
+                   number: 80
+             path: /
+             pathType: Prefix
    ```"
-19.0,"For the first question, you can use regex in your paths without any problem, you just need to annotate the ingress with the use-regex, at least according to the documentation (https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#use-regex)
+19,"For the first question, you can use regex in your paths without any problem, you just need to annotate the ingress with the use-regex, at least according to the documentation (https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#use-regex)
 
 Something like:
 
@@ -1454,9 +1887,79 @@ spec:
 ```
 
 Make sure to replace `admin.example.com` and `normal.example.com` with your actual domain names.",Y,,"### **Key Points:**
-1. Enable regex in Ingress by adding the annotation: ```nginx.ingress.kubernetes.io/use-regex: ""true""```.
-2. Use a rewrite annotation to redirect all paths to the root: ```nginx.ingress.kubernetes.io/rewrite-target: /```."
-20.0,"TL;DR
+1. To enable regex in Ingress paths, annotate the Ingress with `nginx.ingress.kubernetes.io/use-regex: ""true""` in the metadata section.  
+   ```yaml
+   metadata:
+     name: your-name
+     annotations:
+       nginx.ingress.kubernetes.io/use-regex: ""true""
+   ```
+
+2. To match all paths to the root path, use the rewrite annotation `nginx.ingress.kubernetes.io/rewrite-target: /`.  
+   ```yaml
+   nginx.ingress.kubernetes.io/rewrite-target: /
+   ```","### **Key Points:**
+1. Implement regex to match the first part of a path in Ingress using the annotation `nginx.ingress.kubernetes.io/use-regex: ""true""` and specify the path as `/^\/search_[0-9A-Z]{9}`.  
+   ```yaml
+   apiVersion: networking.k8s.io/v1beta1
+   kind: Ingress
+   metadata:
+     name: search-ingress
+     annotations:
+       nginx.ingress.kubernetes.io/use-regex: ""true""
+   spec:
+     rules:
+     - http:
+         paths:
+         - path: /^\/search_[0-9A-Z]{9}
+           backend:
+             serviceName: global-search-service
+             servicePort: 5050
+   ```
+
+2. Access a service without specifying a path by using the following configuration:  
+   ```yaml
+   apiVersion: networking.k8s.io/v1beta1
+   kind: Ingress
+   metadata:
+     name: chart-ingress
+   spec:
+     rules:
+     - http:
+         paths:
+         - path: /
+           pathType: Prefix
+           backend:
+             serviceName: chart-display
+             servicePort: 10000
+   ```
+
+3. Host two different React apps at root paths by differentiating them based on the host header. Replace the host names with your actual domain names:  
+   ```yaml
+   apiVersion: networking.k8s.io/v1beta1
+   kind: Ingress
+   metadata:
+     name: react-ingress
+     annotations:
+       kubernetes.io/ingress.class: nginx
+   spec:
+     rules:
+     - host: admin.example.com
+       http:
+         paths:
+         - path: /
+           backend:
+             serviceName: web2-service
+             servicePort: 2000
+     - host: normal.example.com
+       http:
+         paths:
+         - path: /
+           backend:
+             serviceName: web1-service
+             servicePort: 1000
+   ```"
+20,"TL;DR
 nginx.ingress.kubernetes.io/rewrite-target: /$2
 path: /webservice($|/)(.*)
 Explanation
@@ -1531,9 +2034,17 @@ Applying this updated Ingress definition should redirect `/webservice` requests 
 You can apply this configuration using the `kubectl apply -f ingress.yaml` command. After applying the changes, test the endpoints again with `curl` to ensure the routing is working correctly.
 
 If you encounter any issues or need further assistance, feel free to ask for help.",Y,,"### **Key Points:**
-1. Use regex in the rewrite annotation to correctly rewrite URLs, with the code snippet: ```nginx.ingress.kubernetes.io/rewrite-target: /$2```.
-2. Enable regex usage in the Ingress by adding the annotation: ```nginx.ingress.kubernetes.io/use-regex: ""true""```."
-21.0,"you need to check few things.
+1. Use regex in the rewrite annotation to capture the second matching group for URL rewriting. Code snippet: ```nginx.ingress.kubernetes.io/rewrite-target: /$2```.
+2. Enable regex usage in the Ingress by adding the appropriate annotation. Code snippet: ```nginx.ingress.kubernetes.io/use-regex: ""true""```.","### **Key Points:**
+1. Use the `nginx.ingress.kubernetes.io/rewrite-target` annotation to capture the remaining URI after `/webservice` with the placeholder `$2`. 
+   ```yaml
+   nginx.ingress.kubernetes.io/rewrite-target: /$2
+   ```
+2. Enable regex matching for the path by using the `nginx.ingress.kubernetes.io/use-regex: ""true""` annotation.
+   ```yaml
+   nginx.ingress.kubernetes.io/use-regex: ""true""
+   ```"
+21,"you need to check few things.
 
 Check the output of command ""kubectl get ingress"", if you can see the resources.
 What annotations you are using currently. Below is the list of few example annotations which can be used.
@@ -1599,8 +2110,17 @@ spec:
    - ```nginx.ingress.kubernetes.io/session-cookie-name: ""route""```
    - ```nginx.ingress.kubernetes.io/session-cookie-hash: ""sha1""```
    - ```nginx.ingress.kubernetes.io/use-regex: ""true""```
-   - ```nginx.ingress.kubernetes.io/session-cookie-path: ""/""```"
-22.0,"As you pointed out, looks like nginx is proxying your https request to ipWhichEndsWith.249:8443, which is an HTTPS endpoint, using http as protocol.
+   - ```nginx.ingress.kubernetes.io/session-cookie-path: ""/""```","### **Key Points:**
+1. Add the `pathType` field set to `ImplementationSpecific` in the ingress paths to avoid unexpected behavior. 
+   ```yaml
+   pathType: ImplementationSpecific
+   ```
+2. Use the rewrite annotation to ensure proper routing to backend services, along with enabling regex usage.
+   ```yaml
+   nginx.ingress.kubernetes.io/rewrite-target: /
+   nginx.ingress.kubernetes.io/use-regex: ""true""
+   ```"
+22,"As you pointed out, looks like nginx is proxying your https request to ipWhichEndsWith.249:8443, which is an HTTPS endpoint, using http as protocol.
 
 You should add the following annotation to your PodSpec:
 
@@ -1649,8 +2169,10 @@ spec:
 ```
 ",Y,,"### **Key Points:**
 1. Add the annotation to your PodSpec to specify the backend protocol as HTTPS: ```nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""```.
-2. Note that the annotation for secure backends is deprecated and should not be used: ```nginx.ingress.kubernetes.io/secure-backends: ""true""```."
-23.0,"Try to add nginx.ingress.kubernetes.io/backend-protocol: https annontation to your ingress definition.
+2. Note that the annotation for secure backends is deprecated and should not be used: ```nginx.ingress.kubernetes.io/secure-backends: ""true""```.","### **Key Points:**
+1. Enable SSL passthrough and specify backend protocol for the Kubernetes Dashboard Ingress configuration, ```nginx.ingress.kubernetes.io/ssl-passthrough: ""true""``` and ```nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""```.
+2. Define TLS settings with the appropriate host and secret name in the Ingress resource, including the `tls` section with `hosts` and `secretName`."
+23,"Try to add nginx.ingress.kubernetes.io/backend-protocol: https annontation to your ingress definition.
 
 Using backend-protocol annotations is possible to indicate how NGINX should communicate with the backend service. By default NGINX uses HTTP.
 
@@ -1717,8 +2239,20 @@ status:
 ```
 
 Make sure to replace `your-tls-secret-name` with the name of the TLS secret containing your self-signed certificates. The added annotations `nginx.ingress.kubernetes.io/ssl-redirect: ""true""` and `nginx.ingress.kubernetes.io/force-ssl-redirect: ""true""` will ensure that all traffic is redirected to HTTPS.",N,,"### **Key Points:**
-1. Add a backend-protocol annotation to specify the communication protocol with the backend service, using `nginx.ingress.kubernetes.io/backend-protocol: https`."
-24.0,"It looks like you are missing an annotation on your ingress.
+1. Add a backend-protocol annotation to specify the communication protocol with the backend service, ```nginx.ingress.kubernetes.io/backend-protocol: https```.","### **Key Points:**
+1. Update Ingress annotations to redirect all traffic to HTTPS by adding:  
+   ```yaml
+   nginx.ingress.kubernetes.io/ssl-redirect: ""true""
+   nginx.ingress.kubernetes.io/force-ssl-redirect: ""true""
+   ```
+2. Ensure the Ingress configuration includes a TLS section with the appropriate secret name for your certificates:  
+   ```yaml
+   tls:
+     - hosts:
+         - hostname
+       secretName: your-tls-secret-name
+   ```"
+24,"It looks like you are missing an annotation on your ingress.
 
 ingress.yaml - snippet
 apiVersion: extensions/v1beta1
@@ -1772,8 +2306,11 @@ In this updated YAML:
 - Make sure to replace `""$2""` with the appropriate value that corresponds to the gRPC service path.
 - Adjust the `serviceName` and `servicePort` values accordingly based on your gRPC service configuration.",Y,,"### **Key Points:**
 1. Add the `backend-protocol` annotation to specify how NGINX should communicate with the backend service, e.g., ```nginx.ingress.kubernetes.io/backend-protocol: ""GRPC""```.
-2. If using SSL, consider specifying `GRPCS` instead of `GRPC`, e.g., ```nginx.ingress.kubernetes.io/backend-protocol: ""GRPCS""```."
-25.0,"We were able to solve this by adding the following to the metadata of our Ingress
+2. If using SSL, consider specifying `GRPCS` instead of `GRPC`, e.g., ```nginx.ingress.kubernetes.io/backend-protocol: ""GRPCS""```.","### **Key Points:**
+1. Set the gRPC backend annotation to enable gRPC support: ```nginx.ingress.kubernetes.io/grpc-backend: ""true""```.
+2. Enforce SSL redirection for secure communication: ```nginx.ingress.kubernetes.io/ssl-redirect: ""true""```.
+3. Update the rewrite target annotation to match the gRPC service path: ```nginx.ingress.kubernetes.io/rewrite-target: """"```."
+25,"We were able to solve this by adding the following to the metadata of our Ingress
 
   annotations:
     nginx.ingress.kubernetes.io/backend-protocol: HTTPS
@@ -1807,8 +2344,10 @@ Make sure to replace `my-service` with the name of your headless service.
 
 By specifying the `nginx.ingress.kubernetes.io/service-protocol: ""TCP""` annotation in the Ingress configuration, you can ensure that the communication between the Ingress controller and the Endpoints object on port 443 occurs over TCP, resolving the issue of the connection being reset when using HTTP in the upstream request.",N,,"### **Key Points:**
 1. Enable HTTPS for the backend protocol by adding the annotation, ```nginx.ingress.kubernetes.io/backend-protocol: HTTPS```.
-2. Enable Server Name Indication (SNI) by adding the configuration snippet, ```proxy_ssl_server_name on; proxy_ssl_name $host;```."
-26.0,"From the docs here you need to add this annotation
+2. Enable Server Name Indication (SNI) by adding the configuration snippet, ```nginx.ingress.kubernetes.io/configuration-snippet: |- proxy_ssl_server_name on; proxy_ssl_name $host;```.","### **Key Points:**
+1. Specify the protocol for the Ingress controller to use TCP by adding the annotation, ```nginx.ingress.kubernetes.io/service-protocol: ""TCP""```.
+2. Ensure the Ingress configuration includes the annotation for service upstream, ```nginx.ingress.kubernetes.io/service-upstream: ""true""```."
+26,"From the docs here you need to add this annotation
 
 nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
 Using backend-protocol annotations is possible to indicate how NGINX should communicate with the backend service. (Replaces secure-backends in older versions) Valid Values: HTTP, HTTPS, GRPC, GRPCS and AJP
@@ -1840,8 +2379,10 @@ spec:
 With the updated `nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""` annotation, the Ingress will be configured to connect with HTTPS servers in pods. Make sure to replace the placeholders `api-rest` and `auth-entry` with the actual service names corresponding to your pods.
 
 Please apply this YAML configuration to your Kubernetes cluster to fix the connectivity issue with HTTPS servers in pods through the Nginx Ingress.",Y,,"### **Key Points:**
-1. Add the backend-protocol annotation to specify communication method with the backend service: ```nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""```."
-27.0,"Attention: This answer applies to the ingress-nginx solution provided by the kubernetes organisation on github (https://github.com/kubernetes/ingress-nginx)
+1. Add the backend-protocol annotation to specify communication method with the backend service: ```nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""```.","### **Key Points:**
+1. Configure the Ingress to connect with HTTPS servers by adding the annotation for backend protocol, ```nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""```.
+2. Ensure to include the rewrite target annotation in the Ingress configuration, ```nginx.ingress.kubernetes.io/rewrite-target: /```."
+27,"Attention: This answer applies to the ingress-nginx solution provided by the kubernetes organisation on github (https://github.com/kubernetes/ingress-nginx)
 
 If you want to use load balancing mechanisms in k8s you should use services instead and start multiple instances behind that service that way k8s will do the load balancing. If you want to use different versions of your backend (e.g. prod and test) your way of separating them is fine
 
@@ -1981,7 +2522,7 @@ With these annotations, the Ingress controller will handle incoming HTTPS reques
              servicePort: 9443
            path: /oauth
    ```
-4. Example Ingress YAML for TLS with decryption in the ingress controller:
+4. Example Ingress YAML for TLS decryption in the ingress controller with a TLS secret:
    ```yaml
    apiVersion: networking.k8s.io/v1
    kind: Ingress
@@ -2007,7 +2548,7 @@ With these annotations, the Ingress controller will handle incoming HTTPS reques
              servicePort: 9443
            path: /oauth
    ```
-5. Example Ingress YAML for TLS with decryption in the backend:
+5. Example Ingress YAML for TLS decryption in the backend:
    ```yaml
    apiVersion: networking.k8s.io/v1
    kind: Ingress
@@ -2028,8 +2569,28 @@ With these annotations, the Ingress controller will handle incoming HTTPS reques
              serviceName: service2
              servicePort: 9443
            path: /oauth
+   ```","### **Key Points:**
+1. Configure Ingress to handle HTTPS requests with `ssl-passthrough` and `backend-protocol` annotations: 
+   ```yaml
+   nginx.ingress.kubernetes.io/ssl-passthrough: ""true""
+   nginx.ingress.kubernetes.io/backend-protocol: ""https""
+   ```
+2. Define rules for forwarding requests to backend services based on URL paths:
+   ```yaml
+   - path: /carbon
+     backend:
+       service:
+         name: service
+         port:
+           number: 9443
+   - path: /oauth
+     backend:
+       service:
+         name: service2
+         port:
+           number: 9443
    ```"
-28.0,"If you want SSL termination to happen at the server instead at the ingress/LoadBalancer, you can use a something called SSL Passthrough. Load Balancer will then not terminate the SSL request at the ingress but then your server should be able to terminate those SSL request. Use these configuration in your ingress.yaml file depending upon your ingress class
+28,"If you want SSL termination to happen at the server instead at the ingress/LoadBalancer, you can use a something called SSL Passthrough. Load Balancer will then not terminate the SSL request at the ingress but then your server should be able to terminate those SSL request. Use these configuration in your ingress.yaml file depending upon your ingress class
 
    annotations:
     ingress.kubernetes.io/ssl-passthrough: ""true""
@@ -2081,8 +2642,37 @@ After applying this annotation to your Ingress resource, the controller will sen
 2. Specify the backend protocol for NGINX to communicate with the backend service by using the following annotation:
    ```yaml
    nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+   ```","### **Key Points:**
+1. To remove SSL termination from Kubernetes Ingress, use the annotation `nginx.ingress.kubernetes.io/ssl-passthrough: ""true""` in your Ingress resource configuration.  
+   ```yaml
+   nginx.ingress.kubernetes.io/ssl-passthrough: ""true""
+   ```
+2. Ensure your Ingress resource includes the necessary TLS configuration and backend service details.  
+   ```yaml
+   apiVersion: networking.k8s.io/v1
+   kind: Ingress
+   metadata:
+     name: development-auto-deploy
+     namespace: ******
+   spec:
+     rules:
+       - host: ******
+         http:
+           paths:
+             - backend:
+                 service:
+                   name: development-auto-deploy
+                   port:
+                     number: 443
+               path: /
+               pathType: ImplementationSpecific
+     tls:
+       - hosts:
+           - ******
+           - ******
+         secretName: development-auto-deploy-tls
    ```"
-29.0,"Use below annotation in ingress resourece
+29,"Use below annotation in ingress resourece
 
 nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
 From the docs
@@ -2116,9 +2706,18 @@ spec:
             port:
               number: 443
 ```",Y,,"### **Key Points:**
-1. Use the `nginx.ingress.kubernetes.io/backend-protocol` annotation to specify the communication protocol with the backend service, replacing the older `secure-backends` annotation. Valid values include HTTP, HTTPS, GRPC, GRPCS, AJP, and FCGI.  
-   Code snippet: ```nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""```"
-30.0,"You can use following command to delete the POD forcefully.
+1. Use the `nginx.ingress.kubernetes.io/backend-protocol` annotation to specify the communication protocol with the backend service, replacing the older `secure-backends` annotation. The valid values include HTTP, HTTPS, GRPC, GRPCS, AJP, and FCGI. ```nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""```","### **Key Points:**
+1. Enable SSL redirection and specify backend protocol for HTTPS by adding the following annotations: 
+   ```yaml
+   nginx.ingress.kubernetes.io/ssl-redirect: ""true""
+   nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+   ```
+2. Configure proxy redirection from HTTP to HTTPS using these annotations:
+   ```yaml
+   nginx.ingress.kubernetes.io/proxy-redirect-from: ""http://""
+   nginx.ingress.kubernetes.io/proxy-redirect-to: ""https://""
+   ```"
+30,"You can use following command to delete the POD forcefully.
 
 <code>kubectl delete pod &lt;PODNAME&gt; --grace-period=0 --force --namespace
 </code>","### Common Reasons for Pods Stuck in Terminating Status
@@ -2170,8 +2769,40 @@ journalctl -u kubelet
 journalctl -u kube-apiserver
 journalctl -u kube-controller-manager
 ```",Y,,"### **Key Points:**
-1. To forcefully delete a POD, use the command: ```kubectl delete pod <PODNAME> --grace-period=0 --force --namespace```."
-31.0,"As the handbook describes, you can reuse the Docker daemon from Minikube with eval $(minikube docker-env).
+1. To forcefully delete a POD, use the command: ```kubectl delete pod <PODNAME> --grace-period=0 --force --namespace```.","### **Key Points:**
+1. **Check Node Health**: Ensure nodes are healthy and communicating with the control plane. Use the command: 
+   ```bash
+   kubectl get nodes
+   ```
+   If a node is `NotReady`, investigate with:
+   ```bash
+   journalctl -u kubelet
+   ```
+
+2. **Inspect for Finalizers**: Check if pods have finalizers blocking deletion. Use:
+   ```bash
+   kubectl get pod pod-186o2 -o json | jq '.metadata.finalizers'
+   ```
+   To remove unnecessary finalizers, execute:
+   ```bash
+   kubectl patch pod pod-186o2 -p '{""metadata"":{""finalizers"":null}}'
+   ```
+
+3. **Force Delete Pods**: If pods remain stuck, force delete them with:
+   ```bash
+   kubectl delete pod pod-186o2 --grace-period=0 --force
+   ```
+
+4. **Check Logs for Errors**: If issues persist, review logs for errors. Check kubelet logs with:
+   ```bash
+   journalctl -u kubelet
+   ```
+   And Kubernetes control plane logs (if accessible) with:
+   ```bash
+   journalctl -u kube-apiserver
+   journalctl -u kube-controller-manager
+   ```"
+31,"As the handbook describes, you can reuse the Docker daemon from Minikube with eval $(minikube docker-env).
 So to use an image without uploading it, you can follow these steps:
 
 Set the environment variables with eval $(minikube docker-env)
@@ -2253,9 +2884,36 @@ kubectl get pods
 ```",Y,,"### **Key Points:**
 1. Reuse the Docker daemon from Minikube by setting environment variables: ```eval $(minikube docker-env)```.
 2. Build the image using Minikube's Docker daemon: ```docker build -t my-image .```
-3. Specify the image in the pod configuration with the build tag: ```my-image```.
-4. Set the imagePullPolicy to Never to prevent Kubernetes from attempting to download the image: ```imagePullPolicy: Never```."
-32.0,"There is no command to do exactly what you asked.
+3. Specify the image in the pod configuration: ```image: my-image```.
+4. Set the imagePullPolicy to Never to prevent Kubernetes from downloading the image: ```imagePullPolicy: Never```.","### **Key Points:**
+1. Start Minikube with the Docker driver to use local Docker images directly: ```minikube start --driver=docker```.
+2. Configure your shell to use Minikube's Docker daemon: ```eval $(minikube docker-env)```.
+3. Build or pull your Docker images within Minikube's Docker environment: ```docker build -t fluxcapacitor/hdfs:latest .```.
+4. Create Kubernetes deployments using local images and set `imagePullPolicy` to `Never`: 
+   ```yaml
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: hdfs-deployment
+   spec:
+     replicas: 1
+     selector:
+       matchLabels:
+         app: hdfs
+     template:
+       metadata:
+         labels:
+           app: hdfs
+       spec:
+         containers:
+         - name: hdfs
+           image: fluxcapacitor/hdfs:latest
+           ports:
+           - containerPort: 8989
+           imagePullPolicy: Never
+   ```
+5. Verify the deployment by checking the status of your pods: ```kubectl get pods```."
+32,"There is no command to do exactly what you asked.
 Here are some close matches.
 Be careful before running any of these commands.  Make sure you are connected to the right cluster, if you use multiple clusters.  Consider running. kubectl config view first.
 You can delete all the pods in a single namespace with this command:
@@ -2310,15 +2968,17 @@ kubectl delete pods -l app=myapp --all-namespaces
 Here, `-l app=myapp` specifies that only pods with the label `app=myapp` should be deleted across all namespaces.",Y,"Upon looking at the docs, there is an API call to delete a single pod, but is there a way to delete all pods in all namespaces?","### **Key Points:**
 1. To delete all pods in a specific namespace, use: ```kubectl delete --all pods --namespace=foo```.
 2. To delete all deployments in a namespace (which also deletes associated pods), use: ```kubectl delete --all deployments --namespace=foo```.
-3. To delete all namespaces (excluding un-namespaced objects), use: ```kubectl delete --all namespaces```, but be cautious as this affects the kube-system namespace.
+3. To delete all namespaces (with caution), use: ```kubectl delete --all namespaces```.
 4. To delete all namespaces except kube-system, use the following loop:
    ```bash
    for each in $(kubectl get ns -o jsonpath=""{.items[*].metadata.name}"" | grep -v kube-system);
    do
      kubectl delete ns $each
    done
-   ```"
-33.0,"You can switch from local (minikube) to gcloud and back with:
+   ```","### **Key Points:**
+1. To delete all pods in all namespaces, use the command: ```kubectl delete pods --all --all-namespaces```.
+2. To delete specific pods based on labels, use the command: ```kubectl delete pods -l app=myapp --all-namespaces```."
+33,"You can switch from local (minikube) to gcloud and back with:
 
 kubectl config use-context CONTEXT_NAME
 
@@ -2387,8 +3047,12 @@ Currently I need to work with each environment separately: I need to edit the YA
 Ideally, I would like to use kubectl from my Macbook to easily change between the local minikube or GCE Kubernetes environments and to easily determine where the YAML files are used. Is there a simple way to switch contexts to do this?","### **Key Points:**
 1. Switch between local (minikube) and gcloud contexts using: ```kubectl config use-context CONTEXT_NAME```.
 2. List all available contexts with: ```kubectl config get-contexts```.
-3. Create separate YAML files for different environments for local and gcloud configurations."
-34.0,"You need to delete the deployment, which should in turn delete the pods and the replica sets https://github.com/kubernetes/kubernetes/issues/24137
+3. Create separate YAML files for different environments for local and gcloud configurations.","### **Key Points:**
+1. Configure `kubectl` to access both local minikube and GKE clusters using the command: ```gcloud container clusters get-credentials [CLUSTER_NAME] --zone [ZONE] --project [PROJECT_ID]```.
+2. Verify available contexts with: ```kubectl config get-contexts```.
+3. Switch between contexts using: ```kubectl config use-context [CONTEXT_NAME]```, replacing `[CONTEXT_NAME]` with the desired context name.
+4. Deploy YAML files to the selected cluster with: ```kubectl apply -f [FILE_NAME]```, replacing `[FILE_NAME]` with the path to your YAML file."
+34,"You need to delete the deployment, which should in turn delete the pods and the replica sets https://github.com/kubernetes/kubernetes/issues/24137
 To list all deployments:
 kubectl get deployments --all-namespaces
 
@@ -2484,10 +3148,35 @@ $ kubectl get pods --all-namespaces
 NAMESPACE   NAME            READY     STATUS              RESTARTS   AGE
 default     busybox-c9rnx   0/1       RunContainerError   0          23s
 ","### **Key Points:**
-1. To delete a deployment and its associated pods and replica sets, use the command: ```kubectl delete -n NAMESPACE deployment DEPLOYMENT```.
-2. To check for jobs that may be running the deployment, list them with: ```kubectl get jobs```.
-3. To check for daemonsets that may be running the deployment, use: ```kubectl get daemonsets.app --all-namespaces``` and ```kubectl get daemonsets.extensions --all-namespaces```."
-35.0,"Those are two different approaches:
+1. To delete a deployment and its associated pods and replica sets, use the command:  
+   ```kubectl delete -n NAMESPACE deployment DEPLOYMENT```
+2. To check for jobs that may be running the deployment, list jobs with:  
+   ```kubectl get jobs```
+3. To check for daemonsets that may be running the deployment, list daemonsets with:  
+   ```kubectl get daemonsets.app --all-namespaces```  
+   ```kubectl get daemonsets.extensions --all-namespaces```","### **Key Points:**
+1. Identify if a Deployment or ReplicaSet is managing the `busybox` pod by running:
+   ```bash
+   kubectl get deployments
+   kubectl get replicasets
+   ```
+2. Delete the managing Deployment or ReplicaSet using:
+   ```bash
+   kubectl delete deployment <deployment-name>
+   ```
+   or
+   ```bash
+   kubectl delete replicaset <replicaset-name>
+   ```
+3. Delete any remaining `busybox` pods with:
+   ```bash
+   kubectl delete pod --selector=run=busybox --grace-period=0 --force
+   ```
+4. To create a Deployment explicitly, use:
+   ```bash
+   kubectl create deployment busybox --image=busybox
+   ```"
+35,"Those are two different approaches:
 Imperative Management
 kubectl create is what we call Imperative Management. On this approach you tell the Kubernetes API what you want to create, replace or delete, not how you want your K8s cluster world to look like.
 Declarative Management
@@ -2554,11 +3243,19 @@ How do they differ from each other under the hood?
    ```bash
    kubectl create <resource>
    ```
-2. Use **Declarative Management** with `kubectl apply` to maintain changes made to live objects, allowing for updates without errors if the resource already exists.
+2. Use **Declarative Management** with `kubectl apply` to maintain changes to live objects, allowing for updates without errors if the resource already exists.
    ```bash
    kubectl apply -f <file.yaml>
-   ```"
-36.0,"The issue #47538 that @jdf mentioned is now closed and this is now possible. The original implementation can be found here but the syntax has changed.
+   ```","### **Key Points:**
+1. Use `kubectl create` to create a new resource in the cluster from a configuration file, ensuring the resource does not already exist.  
+   Code snippet: ```kubectl create -f my-resource.yaml```
+   
+2. Use `kubectl replace` to forcefully replace an existing resource with a new configuration, which deletes the old resource and creates a new one.  
+   Code snippet: ```kubectl replace -f updated-resource.yaml```
+   
+3. Use `kubectl apply` to apply a configuration to a resource, creating it if it doesn't exist or updating it while preserving runtime changes.  
+   Code snippet: ```kubectl apply -f resource.yaml```"
+36,"The issue #47538 that @jdf mentioned is now closed and this is now possible. The original implementation can be found here but the syntax has changed.
 With kubectl v1.10.1+ the command is:
 kubectl create job --from=cronjob/<cronjob-name> <job-name> -n namespace-name
 It seems to be backwardly compatible with older clusters as it worked for me on v0.8.x.","To manually trigger a Kubernetes Scheduled Job (also known as a CronJob), you can create a Job from the CronJob's template. This allows you to run the job immediately, outside of its scheduled times. Here's how you can do it:
@@ -2614,14 +3311,36 @@ It seems to be backwardly compatible with older clusters as it worked for me on 
 - **Isolation**: Running a Job manually from the CronJob template ensures that the execution environment is the same as it would be during scheduled runs, maintaining consistency.
 
 By following these steps, you can manually trigger a Kubernetes CronJob whenever needed, providing flexibility in managing scheduled tasks.",Y,"I've created a Kubernetes Scheduled Job, which runs twice a day according to its schedule. However, I would like to trigger it manually for testing purposes. How can I do this?","### **Key Points:**
-1. Create a job from a cronjob using the command: ```kubectl create job --from=cronjob/<cronjob-name> <job-name> -n namespace-name```."
+1. Create a job from a cronjob using the command: ```kubectl create job --from=cronjob/<cronjob-name> <job-name> -n namespace-name```.","### **Key Points:**
+1. Retrieve the CronJob YAML definition using the command: ```kubectl get cronjob <cronjob-name> -n <namespace> -o yaml```.
+2. Create a Job YAML from the CronJob's `jobTemplate`, modifying it as needed, for example:
+   ```yaml
+   apiVersion: batch/v1
+   kind: Job
+   metadata:
+     name: <job-name>
+     namespace: <namespace>
+   spec:
+     template:
+       spec:
+         containers:
+         - name: <container-name>
+           image: <image>
+         restartPolicy: Never
+   ```
+3. Create the Job in Kubernetes using the command: ```kubectl apply -f job.yaml``` or directly with: ```kubectl create job --from=cronjob/<cronjob-name> <job-name> -n <namespace>```."
 ,,,,,"### **Key Points:**
+1. No content provided to summarize.","### **Key Points:**
 1. No content provided to summarize."
 ,,,,,"### **Key Points:**
+1. No content provided to summarize.","### **Key Points:**
 1. No content provided to summarize."
 ,,,,,"### **Key Points:**
+1. No content provided to summarize.","### **Key Points:**
 1. No content provided to summarize."
 ,,,,,"### **Key Points:**
+1. No content provided to summarize.","### **Key Points:**
 1. No content provided to summarize."
 ,,,,,"### **Key Points:**
+1. No content provided in Text 1 to summarize.","### **Key Points:**
 1. No content provided to summarize."
