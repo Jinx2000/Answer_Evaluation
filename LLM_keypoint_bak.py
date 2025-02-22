@@ -8,6 +8,7 @@ os.environ["https_proxy"] = "http://localhost:7890"
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+
 input_csv = "input_data.csv"
 
 def save_keypoints():
