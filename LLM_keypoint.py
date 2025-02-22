@@ -3,8 +3,8 @@ import openai
 import pandas as pd
 from bs4 import BeautifulSoup
 
-os.environ["http_proxy"] = "http://localhost:7890"
-os.environ["https_proxy"] = "http://localhost:7890"
+# os.environ["http_proxy"] = "http://localhost:7890"
+# os.environ["https_proxy"] = "http://localhost:7890"
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
