@@ -84,8 +84,8 @@ def save_keypoints():
     df = pd.read_csv(input_csv)
 
     for index, row in df.iterrows():
-        text1 = str(row["StackOverflow Answer"]).strip()
-        text2 = str(row["Previous RAG Answer"]).strip()
+        text1 = str(row["Answer Body"]).strip()
+        text2 = str(row["gpt_Generated_Response"]).strip()
 
         if not text1 or not text2:
             key_points_1 = "N/A"
@@ -97,7 +97,7 @@ def save_keypoints():
 
         key_points_list_1.append(key_points_1)
         key_points_list_2.append(key_points_2)
-        print(f"Finished ID {row['ID']}")
+        print(f"Finished ID {row['Question ID']}")
 
     df['Key Points'] = key_points_list_1
     df['Key Points_answer'] = key_points_list_2
@@ -161,13 +161,13 @@ def evaluate_RAG_answer():
             explanation_soup = BeautifulSoup(explanation, 'html.parser')
             accuracy_score = int(explanation_soup.find("accuracy_score").contents[0])
             if accuracy_score >= 60:
-                rag_answer = "Y"
+                final_score = "Y"
             else:
-                rag_answer = "N"
+                final_score = "N"
 
 
-        results.append({"ID": row["ID"], "Key Points:": key_points, "RAG Key Points": key_points_RAG, "LLM Method Result": explanation, "RAG_Answer": rag_answer})
-        print(f"Finished ID {row['ID']}")
+        results.append({"ID": row["Question ID"], "Key Points:": key_points, "Answer": str(row["gpt_Generated_Response"]).strip(), "RAG Key Points": key_points_RAG, "LLM Method Result": explanation, "Score": final_score})
+        print(f"Finished ID {row['Question ID']}")
 
     output_csv = "LLM_keypoint_results.csv"
     pd.DataFrame(results).to_csv(output_csv, index=False)
