@@ -1,2 +1,5 @@
 # Ignore all CSV files
 *.csv
+
+# But keep keypoints_stack.csv
+!keypoints_stack.csv
