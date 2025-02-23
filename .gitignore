@@ -3,3 +3,6 @@
 
 # But keep keypoints_stack.csv
 !keypoints_stack.csv
+
+# keep whatever there is under dev_data/
+!dev_data/*.csv
