@@ -2,17 +2,48 @@
 
 ## Usage
 
-When you need to generate the new key_points, please call function **save_keypoints()** in **main()**.
-
-Function **save_keypoints()** will generate the key points in file **input_data.csv**.
-
-You can directly evaluation the RAG answers by calling function **evaluate_RAG_answer()** in **main()**.
+### Run Key Point Extraction
+```bash
+python LLM_keypoint.py
+```
 
 ## Output File Format
 
-The evaluation result will be exported as "LLM_keypoint_results.csv", the rows are "ID", "Key Points", "RAG Key Points", "LLM Method Result", "RAG_Answer"
+- The evaluation results are now exported as `LLM_keypoint_results.csv`.
+- The output file contains the following columns:
+  - **`ID`** – The unique identifier of the answer (Answer ID).
+  - **`Key Points`** – Extracted key points from the correct answers.
+  - **`Answer`** – The LLM-generated response.
+  - **`RAG Key Points`** – Extracted key points from the LLM-generated response.
+  - **`LLM Method Result`** – Evaluation result based on key point similarity.
+  - **`Score`** – Final evaluation score. (Y/N)
 
 ## Update Log
+
+### 2025.2.22
+
+#### 1. Repository Structure Changes
+- Added `/archive/` to store previous versions of scripts.
+- Added `/dev_data/` to store data used for improving the evaluation tool.
+- Updated `.gitignore`.
+
+#### 2. Parallel Processing for OpenAI Requests
+- `save_keypoints()` now runs OpenAI API calls asynchronously using `asyncio.to_thread()`.
+- This ensures true parallel execution, improving processing speed.
+- Implemented automatic retry with exponential backoff for OpenAI rate limits.
+- 9x-10x speedup.
+
+#### 3. Key Point Extraction Optimization
+- Key points from the two texts are now stored in separate CSV files:
+  - `keypoints_stack.csv` for the correct answers.
+  - `keypoints_RAG.csv` for the LLM-generated responses.
+- This allows reusing previously extracted key points from `keypoints_stack.csv`, reducing API calls and improving speed.
+
+#### 4. Input Data Processing Improvement
+- Standardized the way `input_data.csv` is read.
+- This aligns with the format of data from the RAG system, making comparisons more consistent.
+
+---
 
 ### 2025.2.18
 
