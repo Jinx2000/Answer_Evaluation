@@ -1,6 +1,8 @@
 import os
 import openai
 import pandas as pd
+import asyncio
+import time
 from bs4 import BeautifulSoup
 
 # os.environ["http_proxy"] = "http://localhost:7890"
@@ -9,8 +11,12 @@ from bs4 import BeautifulSoup
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 input_csv = "input_data.csv"
+# save keypoints in seperated files
+keypoints_stack_csv = "keypoints_stack.csv"
+keypoints_RAG_csv = "keypoints_RAG.csv"
 
-def extract_key_points_from_text1(text1):
+#async to imporve speed:
+async def extract_key_points_from_text(text):
 
     prompt = f"""
     You are an expert summarizer and familiar with Cloud-native. You will recieve a 'verified correct answer' (Text 1)which is a solution for some problems.
@@ -65,48 +71,62 @@ def extract_key_points_from_text1(text1):
         2. rewrite filed in annotation, ```nginx.ingress.kubernetes.io/rewrite-target: /$2```.
 
     Text 1:
-    {text1}
+    {text}
     """
-    response = openai.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.0
-    )
-    return response.choices[0].message.content.strip()
 
-def save_keypoints():
+    for attempt in range(3):  # Retry up to 3 times
+        try:
+            response = await asyncio.to_thread(
+                openai.chat.completions.create,  # Runs the blocking function in a thread
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0
+            )
+            return response.choices[0].message.content.strip()  # Successful response
+        except openai.RateLimitError:
+            print(f"Rate limit error, retrying ({attempt+1}/3)...")
+            time.sleep(2 ** attempt)  # Uses time.sleep() instead of async sleep
+        except openai.OpenAIError as e:
+            print(f"OpenAI API Error: {e}")
+            return "API Error"
 
-    """
-    Save key points derived from post answer and RAG answer into the original file "input_data.csv".
-    """
-    key_points_list_1 = list()
-    key_points_list_2 = list()
+    return "API Error: Max retries exceeded."
+
+
+# Check if we can reuse keypoints_stack.csv
+def can_use_existing_keypoints(margin=10):
+    if os.path.exists(keypoints_stack_csv):
+        df_input = pd.read_csv(input_csv)
+        df_stack = pd.read_csv(keypoints_stack_csv)
+
+        # Check if the row count is within margin
+        return abs(len(df_input) - len(df_stack)) <= margin
+    return False
+
+# Save key points extracted from CSV
+async def save_keypoints():
     df = pd.read_csv(input_csv)
-
-    for index, row in df.iterrows():
-        text1 = str(row["Answer Body"]).strip()
-        text2 = str(row["gpt_Generated_Response"]).strip()
-
-        if not text1 or not text2:
-            key_points_1 = "N/A"
-            key_points_2 = "N/A"
-
-        else:
-            key_points_1 = extract_key_points_from_text1(text1)
-            key_points_2 = extract_key_points_from_text1(text2)
-
-        key_points_list_1.append(key_points_1)
-        key_points_list_2.append(key_points_2)
-        print(f"Finished ID {row['Question ID']}")
-
-    df['Key Points'] = key_points_list_1
-    df['Key Points_answer'] = key_points_list_2
-    df.to_csv(input_csv, index=False)
-
-
-def evaluate_generated_answer(text1, text2):
-
     
+    key_points_list_1 = []
+    key_points_list_2 = []
+
+    if can_use_existing_keypoints(margin=10):
+        print("Reusing existing keypoints_stack.csv")
+        df_stack = pd.read_csv(keypoints_stack_csv)
+        key_points_list_1 = df_stack["Key Points"].tolist()
+    else:
+        print("Extracting new key points for stack answers...")
+        key_points_list_1 = await asyncio.gather(*[extract_key_points_from_text(str(row["Answer Body"]).strip()) for _, row in df.iterrows()])
+        pd.DataFrame({"Key Points": key_points_list_1}).to_csv(keypoints_stack_csv, index=False)
+    
+    print("Extracting new key points for RAG answers...")
+    key_points_list_2 = await asyncio.gather(*[extract_key_points_from_text(str(row["gpt_Generated_Response"]).strip()) for _, row in df.iterrows()])
+    
+    pd.DataFrame({"Key Points": key_points_list_2}).to_csv(keypoints_RAG_csv, index=False)
+    print("Key point extraction completed.")
+
+
+async def evaluate_generated_answer(text1, text2):
     prompt = f"""
     <evaluation>
         <instructions>
@@ -135,45 +155,74 @@ def evaluate_generated_answer(text1, text2):
     </evaluation>
     """
 
-    response = openai.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.0
-    )
-    return response.choices[0].message.content
+    for attempt in range(3):  # Retry up to 3 times
+        try:
+            response = await asyncio.to_thread(
+                openai.chat.completions.create,  # Runs the blocking function in a thread
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0
+            )
+            return response.choices[0].message.content.strip()  # Successfully returns async result
+        except openai.RateLimitError:
+            print(f"⚠️ Rate limit error, retrying ({attempt+1}/3)...")
+            await asyncio.sleep(2 ** attempt)  # Uses proper async wait
+        except openai.OpenAIError as e:
+            print(f"❌ OpenAI API Error: {e}")
+            return "API Error"
+
+    return "API Error: Max retries exceeded."
 
 
-def evaluate_RAG_answer():
+# Evaluate RAG results
+async def evaluate_RAG_answer():
     df = pd.read_csv(input_csv)
+    df_stack = pd.read_csv(keypoints_stack_csv)
+    df_RAG = pd.read_csv(keypoints_RAG_csv)
 
     results = []
+    
+    tasks = []
     for index, row in df.iterrows():
-        key_points = str(row["Key Points"]).strip()
-        key_points_RAG = str(row["Key Points_answer"]).strip()
-
-        if not key_points or not key_points_RAG:
-            # key_points = "N/A"
-            explanation = "Similarity Score: N/A\nReasoning: Missing Data"
-        else:
-            # key_points = extract_key_points_from_text1(text1)
-            explanation = evaluate_generated_answer(key_points, key_points_RAG)
+        key_points_stack = str(df_stack["Key Points"][index]).strip()
+        key_points_RAG = str(df_RAG["Key Points"][index]).strip()
         
-            explanation_soup = BeautifulSoup(explanation, 'html.parser')
+        if not key_points_stack or not key_points_RAG:
+            explanation = "Similarity Score: N/A\nReasoning: Missing Data"
+            final_score = "N/A"
+        else:
+            tasks.append(evaluate_generated_answer(key_points_stack, key_points_RAG))
+
+    explanations = await asyncio.gather(*tasks)
+
+    for index, explanation in enumerate(explanations):
+        explanation_soup = BeautifulSoup(explanation, 'html.parser')
+        try:
             accuracy_score = int(explanation_soup.find("accuracy_score").contents[0])
-            if accuracy_score >= 60:
-                final_score = "Y"
-            else:
-                final_score = "N"
+            final_score = "Y" if accuracy_score >= 60 else "N"
+        except:
+            accuracy_score = "N/A"
+            final_score = "N/A"
 
-
-        results.append({"ID": row["Question ID"], "Key Points:": key_points, "Answer": str(row["gpt_Generated_Response"]).strip(), "RAG Key Points": key_points_RAG, "LLM Method Result": explanation, "Score": final_score})
-        print(f"Finished ID {row['Question ID']}")
+        results.append({
+            "ID": df["Answer ID"][index],
+            "Key Points": df_stack["Key Points"][index],
+            "Answer": df["gpt_Generated_Response"][index],
+            "RAG Key Points": df_RAG["Key Points"][index],
+            "LLM Method Result": explanation,
+            "Score": final_score
+        })
 
     output_csv = "LLM_keypoint_results.csv"
     pd.DataFrame(results).to_csv(output_csv, index=False)
-
     print(f"Comparison completed. Results saved to {output_csv}")
 
+# Run async functions
 if __name__ == "__main__":
-    # save_keypoints()
-    evaluate_RAG_answer()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(save_keypoints())
+    loop.run_until_complete(evaluate_RAG_answer())
