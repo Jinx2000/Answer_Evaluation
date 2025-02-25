@@ -1,0 +1,4259 @@
+ID,StackOverflow Answer,Previous RAG Answer,Previous Result,Question Body
+2,"Since your application ""real"" root is /my/new/context, you can rewrite every incoming request matching the /dev/jira URI using Nginx's AppRoot:
+
+If the Application Root is exposed in a different path and needs to be redirected, set the annotation nginx.ingress.kubernetes.io/app-root to redirect requests for /.
+
+If you're using this approach, there is no need to use capture groups with rewrite-target.
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  namespace: {{ .Values.global.app }}
+  name: jira-ingress
+  annotations: 
+    kubernetes.io/ingress.class: ""nginx""
+    nginx.ingress.kubernetes.io/ssl-redirect: ""false""
+    nginx.ingress.kubernetes.io/app-root: /my/new/context
+spec:
+  rules:
+  - host: myhost
+    http:
+      paths:
+      - path: /dev/jira(/|$)(.*)
+        backend:
+          serviceName: jira
+          servicePort: 80
+      - path: /prod/jira(/|$)(.*)
+        backend:
+          serviceName: jira
+          servicePort: 80","Based on the provided context and the issue of the context path of the Tomcat server, the NGINX Ingress annotation `nginx.ingress.kubernetes.io/app-root` should be used to redirect requests from the root path `/` to the context path of the application `/my/new/context`. The Ingress configuration should be adjusted to include this annotation so that all incoming requests are properly directed to the Tomcat server running at the specified context path.
+
+Here is the corrected Ingress YAML configuration:
+
+```yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  namespace: {{ .Values.global.app }}
+  name: jira-ingress
+  annotations:
+    kubernetes.io/ingress.class: ""nginx""
+    nginx.ingress.kubernetes.io/ssl-redirect: ""false""
+    nginx.ingress.kubernetes.io/app-root: /my/new/context
+spec:
+  rules:
+  - host: myhost
+    http:
+      paths:
+      - path: /dev/jira(/|$)(.*)
+        backend:
+          serviceName: jira
+          servicePort: 80
+      - path: /prod/jira(/|$)(.*)
+        backend:
+          serviceName: jira
+          servicePort: 80
+```",Y,
+3,"Create an Ingress rule with a app-root annotation:
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/app-root: /app1
+  name: approot
+  namespace: default
+spec:
+  rules:
+  - host: approot.bar.com
+    http:
+      paths:
+      - backend:
+          serviceName: http-svc
+          servicePort: 80
+        path: /
+Check the rewrite is working
+
+$ curl -I -k http://approot.bar.com/
+HTTP/1.1 302 Moved Temporarily
+Server: nginx/1.11.10
+Date: Mon, 13 Mar 2017 14:57:15 GMT
+Content-Type: text/html
+Content-Length: 162
+Location: http://approot.bar.com/app1
+Connection: keep-alive
+or can you create an Ingress rule with a rewrite annotation:
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+  name: rewrite
+  namespace: default
+spec:
+  rules:
+  - host: rewrite.bar.com
+    http:
+      paths:
+      - backend:
+          serviceName: http-svc
+          servicePort: 80
+        path: /something(/|$)(.*)
+In this ingress definition, any characters captured by (.*) will be assigned to the placeholder $2, which is then used as a parameter in the rewrite-target annotation.
+
+For example, the ingress definition above will result in the following rewrites: - rewrite.bar.com/something rewrites to rewrite.bar.com/ - rewrite.bar.com/something/ rewrites to rewrite.bar.com/ - rewrite.bar.com/something/new rewrites to rewrite.bar.com/new","**Answer:**
+
+Based on the provided context, there is no direct way to achieve a redirection from an ingress hostpath to a subpath on the backend using standard Kubernetes Ingress resources. However, you can use NGINX annotations to rewrite the incoming requests to the desired subpath on the backend service.
+
+Here is an example YAML configuration with annotations to achieve a rewrite for the described scenario:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jupyter-notebook-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: ""true""
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: jptrntbk.MYDOMAIN.com
+      http:
+        paths:
+          - path: /lab(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: jupyter-notebook-service
+                port:
+                  number: 8888
+```",Y,
+4,"As you mentioned, there is no error in the log files, and everything looks normal from your perspective. I may suggest to tune up ingress using annotations tags. I've checked documentation of ingress-nginx and found that below annotations may help a bit.
+
+In some scenarios, the exposed URL in the backend service differs from the specified path in the Ingress rule. Without a rewrite, any request will return 404. Set the annotation
+
+nginx.ingress.kubernetes.io/rewrite-target
+to the path expected by the service.
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  name: rewrite
+  namespace: default
+spec:
+  rules:
+  - host: rewrite.bar.com
+    http:
+      paths:
+      - backend:
+          serviceName: http-svc
+          servicePort: 80
+        path: /something
+If the Application Root is exposed in a different path and needs to be redirected, set the annotation
+
+nginx.ingress.kubernetes.io/app-root
+to redirect requests for /.
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/app-root: /app1
+  name: approot
+  namespace: default
+spec:
+  rules:
+  - host: approot.bar.com
+    http:
+      paths:
+      - backend:
+          serviceName: http-svc
+          servicePort: 80
+        path: /
+If the application contains relative links, it is possible to add an additional annotation
+
+nginx.ingress.kubernetes.io/add-base-url
+that will prepend a base tag in the header of the returned HTML from the backend.","Based on the provided context and the issues in the configuration, here is the validated YAML configuration for the Ingress to handle subpaths correctly:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  namespace: domain
+  annotations:
+    kubernetes.io/ingress.class: ""nginx""
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  name: domain-ingress
+spec:
+  rules:
+  - host: metabase.domain.com
+    http:
+      paths:
+      - pathType: Prefix    # Added pathType for subpath matching
+        path: /
+        backend:
+          service:
+            name: metabase
+            port:
+              number: 80
+  - host: jenkins.domain.com
+    http:
+      paths:
+      - pathType: Prefix    # Added pathType for subpath matching
+        path: /
+        backend:
+          service:
+            name: jenkins
+            port:
+              number: 80
+```",Y,
+5,"apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: spare-ingress-dev
+  namespace: default
+  annotations:
+     kubernetes.io/ingress.class: nginx
+     nginx.ingress.kubernetes.io/use-regex: ""true""
+     nginx.ingress.kubernetes.io/app-root: /
+spec:
+ rules:
+  - host: cluster.io
+    http:
+       paths:
+        - path: /api/v1.0/auth/(.+)
+          backend:
+            serviceName: cluster-auth-ip
+            servicePort: 6000
+        - path: /api/v1.0/category/(.+)
+          backend:
+            serviceName: cluster-category-ip
+            servicePort: 5200
+        - path: /category/(.+)
+          backend:
+            serviceName: cluster-category-ip
+            servicePort: 5200
+i found the solution i removed nginx.ingress.kubernetes.io/rewrite-target: $1 and i added
+
+kubernetes.io/ingress.class: nginx
+nginx.ingress.kubernetes.io/use-regex: ""true""
+nginx.ingress.kubernetes.io/app-root: /","Based on the provided context and the issue you are facing with the NGINX Ingress controller in Kubernetes, the problem likely stems from the incorrect path configuration in the Ingress resource. To address this issue and ensure proper redirection, you need to make changes to the Ingress definition annotations in such a way that requests to `/category/` get redirected correctly.
+
+Below is a validated and comprehensive response to resolve the issue and optimize the Ingress resource configuration:
+
+### Ingress Definition:
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: spare-ingress-dev
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: ""true""
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: cluster-test-ip
+                port:
+                  number: 80
+          - path: /category(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: cluster-category-ip
+                port:
+                  number: 5200
+```
+
+### Service Definition:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: cluster-category-ip
+spec:
+  selector:
+    app: category
+  ports:
+    - port: 5200
+      targetPort: 5200
+```",Y,
+6,"Given that it seems you don't have an Ingress Controller installed, if you have the aws cloud-provider configured in your K8S cluster you can follow this guide to install the Nginx Ingress controller using Helm.
+
+By the end of the guide you should have a load balancer created for your ingress controller, point your Route53 record to it and create an Ingress that uses your grafana service. Example:
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/app-root: /
+    nginx.ingress.kubernetes.io/enable-access-log: ""true""
+  name: grafana-ingress
+  namespace: test
+spec:
+  rules:
+  - host: grafana.something.com
+    http:
+      paths:
+      - backend:
+          serviceName: grafana
+          servicePort: 80
+        path: /
+The final traffic path would be:
+
+Route53 -> ELB -> Ingress -> Service -> Pods","To forward traffic from a domain in Route53 to a pod running Grafana using NGINX Ingress, you need to set up an Ingress resource in your Kubernetes cluster. Below is a set of validated YAML configurations with annotations tailored to address your query:
+
+### Ingress Resource Configuration:
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-ingress
+  namespace: test
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: grafana.something.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port:
+              number: 80",Half(Not considerate others),
+7,"If you need to use the server-snippet solution. Something similar to the following will add a custom location block to the Nginx ingress config. This is especially useful if you have other custom requirements for the Nginx ingress.
+
+metadata:
+  annotations:
+    <other annotations>
+    nginx.ingress.kubernetes.io/server-snippet: |
+      location ""/img/"" {
+        proxy_pass http://s3.eu-central-1.amazonaws.com/mybucket123/pictures/;
+        proxy_set_header Host s3.eu-central-1.amazonaws.com;
+      }
+Also, if you are reverse proxying to an endpoint that provides limited logging (AWS S3). The Nginx mirror feature can help debug what requests are being sent. Add an additional annotation to the Ingress controller and specify a system where you can monitor the requests.
+
+nginx.ingress.kubernetes.io/mirror-target: ""http://my-debug-target/""","To set up an S3 proxy on Kubernetes using NGINX Ingress, you have several options. Since you need to ensure that the `Host` header is set correctly when accessing the S3 bucket, you can consider the following approach:
+
+### Option 1: Use Custom `server-snippet` 
+
+1. Create a Kubernetes Ingress resource with a custom `server-snippet` block to set the `Host` header before sending the request to the S3 bucket:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: s3-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/server-snippet: |
+      proxy_set_header Host s3.eu-central-1.amazonaws.com;
+spec:
+  rules:
+  - host: my-kube-server.org
+    http:
+      paths:
+      - path: /img
+        pathType: Prefix
+        backend:
+          service:
+            name: s3-proxy
+            port:
+              number: 80
+```
+
+2. Ensure the `s3-proxy` Service points to the S3 endpoint:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3-proxy
+spec:
+  type: ExternalName
+  externalName: s3.eu-central-1.amazonaws.com
+```",Y,
+8,"Add the following annotation to the kibana ingress so that nginx-ingress interprets the /kibana(/|$)(.*) path using regex:
+
+ nginx.ingress.kubernetes.io/use-regex: ""true""
+Additional detail: To let kibana know that it runs on /kibana path, add the following env variable to the kibana pod/deployment:
+
+        - name: SERVER_BASEPATH
+          value: /kibana","To resolve the issue where Kibana's redirect is caught by a more general rule, and to ensure that the `/kibana` path is preserved for the Kibana service, we need to adjust the Ingress configuration with proper annotations.
+
+Based on the provided context, we should modify the Ingress rule for the Kibana service to ensure that the redirect to `host/login?next=%2F` is correctly handled. Below is the updated Ingress configuration for the Kibana service:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kibana
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: ""true""
+    nginx.ingress.kubernetes.io/rewrite-target: /kibana/
+    nginx.ingress.kubernetes.io/ssl-redirect: ""false""
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: rewrite.bar.com
+      http:
+        paths:
+          - path: /kibana(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: kibana
+                port:
+                  number: 5601
+```",Y,
+9,"apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: ""true""
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+  name: rewrite
+  namespace: default
+spec:
+  rules:
+  - host: rewrite.bar.com
+    http:
+      paths:
+      - backend:
+          serviceName: http-svc
+          servicePort: 80
+        path: /something(/|$)(.*)
+In this ingress definition, any characters captured by (.*) will be assigned to the placeholder $2, which is then used as a parameter in the rewrite-target annotation.
+
+For example:
+
+rewrite.bar.com/something rewrites to rewrite.bar.com/","To remove the routing path `/test` from the Kubernetes Ingress and have the endpoint `/abc` work properly, you can utilize the NGINX Ingress rewrite annotation to modify the URI before forwarding the request to the backend service. 
+
+Here is the validated YAML configuration for the Ingress resource:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: load-balancer
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /test(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: test
+            port:
+              number: 80
+  ingressClassName: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: ""true""
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+```
+
+Explanation:
+- In the `paths` section of the Ingress resource, the `/test(/|$)(.*)` regex pattern captures any characters after `/test` (including an empty string) into the placeholder `$2`.
+- The `nginx.ingress.kubernetes.io/rewrite-target: /$2` annotation then rewrites the URI to exclude `/test` before forwarding the request to the backend service.
+
+Potential issue:
+- The provided context highlights the missing `pathType` in the Ingress configuration. Ensure that `pathType: ImplementationSpecific` is specified for the specific path to adhere to current best practices.
+
+Debugging and troubleshooting steps:
+1. Apply the above YAML configuration using `kubectl apply -f ingress.yaml`.
+2. Send a test request to the endpoint `/abc` using `http://ip-address/abc` to verify that the rewrite rule is successful.
+3. Monitor the NGINX Ingress Controller logs for any errors or warnings related to the rewrite functionality.
+4. Use `kubectl describe ingress load-balancer` to check the applied annotations and paths to ensure they match the intended configuration.
+5. If issues persist, review NGINX Ingress Controller logs and NGINX configuration to troubleshoot further.
+",Y,
+10,"We have 2 issues here
+
+1. Ingress route
+2. SignalR with LoadBalancer
+Ingress route
+nginx.ingress.kubernetes.io/rewrite-target: /$1
+Rewrite has $1 it means to place first capturing group, but what is it? Well it's something that can be used only when nginx.ingress.kubernetes.io/use-regex is added, so it just doesn't make sens, when request is send to get for file like /styles.css it would end up with something like /$1styles.css in Blazor app or anything else but not valid from your app point of view.
+
+You can have for example
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: blazor-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/affinity: ""cookie""
+    nginx.ingress.kubernetes.io/session-cookie-name: ""affinity""
+    nginx.ingress.kubernetes.io/session-cookie-expires: ""14400""
+    nginx.ingress.kubernetes.io/session-cookie-max-age: ""14400""
+spec:
+  rules:
+    - host: blazor.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: blazor
+                port:
+                  number: 80
+And everything should work, but rewrite /(path: /) to /(rewrite-target: / end with what we had at beginning, so removing line with rewrite-target has exactly same effect.
+
+Another example using regex
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: blazor-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: ""true""
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/affinity: ""cookie""
+    nginx.ingress.kubernetes.io/session-cookie-name: ""affinity""
+    nginx.ingress.kubernetes.io/session-cookie-expires: ""14400""
+    nginx.ingress.kubernetes.io/session-cookie-max-age: ""14400""
+spec:
+  rules:
+    - host: blazor.test
+      http:
+        paths:
+          - path: /(.*)
+            pathType: Prefix
+            backend:
+              service:
+                name: blazor
+                port:
+                  number: 80
+In this case in path we have /(.*) and we have one capturing group what is (.*)(to make path / work correctly you must have * instead of +), then rewrite comes in and it says /$1 as we have regex enabled in place of $1 the value stored in first capturing group will be used here.","Based on the provided context and the issues faced with the Blazor Server app deployment on Kubernetes, I will provide corrected and enhanced YAML configurations with appropriate annotations:
+
+Deployment YAML:
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blazor
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: blazor
+  template:
+    metadata:
+      labels:
+        app: blazor
+    spec:
+      containers:
+      - name: blazor
+        image: registry/...
+        ports:
+        - containerPort: 80
+        imagePullSecrets:
+        - name: test-webapp
+```
+
+Service YAML:
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: blazor
+  name: blazor
+  namespace: default
+spec:
+  ports:
+  - nodePort: 30500
+    port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: blazor
+  type: NodePort
+```
+
+Ingress YAML:
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: blazor-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/affinity: cookie
+    nginx.ingress.kubernetes.io/session-cookie-name: affinity
+    nginx.ingress.kubernetes.io/session-cookie-expires: ""14400""
+    nginx.ingress.kubernetes.io/session-cookie-max-age: ""14400""
+spec:
+  rules:
+  - host: blazor.test
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: blazor
+            port:
+              number: 80
+```
+
+Explanation:
+1. The Deployment YAML defines the pod template for the Blazor application with the necessary configurations.
+2. The Service YAML exposes the Deployment internally and maps the container port to the service port, allowing inter-pod communication.
+3. The Ingress YAML configures how external traffic is routed to the Blazor app using the specified annotations for session cookie management and rewriting target paths.
+
+Potential Issues:
+1. The provided Ingress YAML lacks the `pathType` field, which is essential for defining how paths should be matched. I have added `pathType: Prefix` assuming this is the desired behavior. Adjust it based on the specific routing needs.
+
+Debugging Steps:
+1. Verify the service and pods are running correctly.
+2. Check network policies to ensure traffic flow.
+3. Use `kubectl describe <resource>` commands to troubleshoot the resources.
+4. Investigate Ingress controller logs for potential routing issues.
+5. Ensure WebSocket protocols are correctly enabled in the Ingress controller configuration.
+
+By implementing the corrected YAML configurations and following the suggested debugging steps, you should be able to address the issues faced with deploying the Blazor Server app on Kubernetes.
+",Y,
+11,"Solved: Chrome was overlooking the etc hosts file, so I did the following:
+
+Switched to Firefox and instantly the URLs were working.
+Added annotations to denote the class:
+kubernetes.io/ingress.class: nginx
+
+Added annotations to make sure requests are redirected to ssl
+nginx.ingress.kubernetes.io/ssl-redirect: ""true""","To resolve the issue where the Minikube Ingress is not resolving, but the Minikube IP is working, we need to adjust the Ingress configuration to properly route traffic to the service. There are two main areas where adjustments need to be made: the Ingress resource definition and potential issues with the application deployment in the pod.
+
+### 1. Deployment YAML:
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: api
+  name: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+      - name: api
+        image: localhost:5000/api:2.3
+        ports:
+        - containerPort: 80
+```
+
+### 2. Service YAML:
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector:
+    app: api
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: NodePort
+```
+
+### 3. Ingress YAML:
+```yaml
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: tls-ingress
+spec:
+  tls:
+    - secretName: oaky-tls
+      hosts:
+        - api.localhost
+  rules:
+    - host: api.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 80
+```",N,
+12,"According to my research I found the following way.
+
+Remove the redirection from an ASP.NET Core app when we host it to kubernetes.
+Apply the redirect to Ingress itself. By adding the following 2 lines to it:
+nginx.ingress.kubernetes.io/force-ssl-redirect: ""true""
+nginx.ingress.kubernetes.io/ssl-redirect: ""true""
+
+So my ingress code becomes:
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: first-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/force-ssl-redirect: ""true""
+    nginx.ingress.kubernetes.io/ssl-redirect: ""true""
+spec:
+  tls:
+  - secretName: ssl
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: first-service
+            port:
+              number: 8080
+Let me know your thoughts. If you have a better answer the kindly add a new answer on the question.","To enable HTTP to HTTPS redirection for your ASP.NET Core application running in a Kubernetes cluster, you need to configure the NGINX Ingress controller to perform the redirection. Since the redirection logic in your ASP.NET Core application (`app.UseHttpsRedirection()`) doesn't work when running behind the Ingress controller, you should handle the redirection at the Ingress controller level.
+
+Here's how you can update your Ingress resource to handle HTTP to HTTPS redirection:
+
+### Ingress Resource Configuration:
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: first-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: ""true""
+spec:
+  tls:
+  - secretName: ssl
+  rules:
+  - host: your-hostname.com
+    http:
+      paths:
+      - pathType: Prefix
+        path: /
+        backend:
+          service:
+            name: first-service
+            port:
+              number: 8080",Y,
+13,"On ingress-nginx you can use the nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""  annotation and point it to the HTTPS port on the service.
+
+This is ingress controller specific and other ingress controllers might not provide the option (or provide an option that works differently)
+
+With this setup, the ingress controller decrypts the traffic. (This allows the ingress controller to control things like ciphers and the certificate presented to the user and do path-based routing, which SSL passthrough does not allow)
+
+It is possible to configure certificate validation with serveral other (ingress-nginx-specific) annotations: Docs
+
+nginx.ingress.kubernetes.io/proxy-ssl-verify (it defaults to ""off"")
+nginx.ingress.kubernetes.io/proxy-ssl-verify-depth
+nginx.ingress.kubernetes.io/proxy-ssl-ciphers (ciphers, not validation related)
+nginx.ingress.kubernetes.io/proxy-ssl-name (Override the name that the cert is checked against)
+nginx.ingress.kubernetes.io/proxy-ssl-protocols (SSL / TLS versions)
+nginx.ingress.kubernetes.io/proxy-ssl-server-name (SNI passthrough)","Based on the provided context and the information related to enabling HTTPS communication between the load balancer and the backend service in Kubernetes Ingress, below is the validated response along with the necessary configurations:
+
+```yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: no-rules-map
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: ""https""
+spec:
+  tls:
+  - secretName: testsecret
+  backend:
+    serviceName: s1
+    servicePort: 80
+```
+
+Explanation:
+1. `nginx.ingress.kubernetes.io/backend-protocol: ""https""`: This annotation instructs NGINX Ingress to communicate with the backend service over HTTPS protocol. This aligns with the requirement of enabling HTTPS communication between the load balancer and the backend service.
+
+Rationale:
+- The annotation ensures that NGINX Ingress communicates with the backend service using HTTPS, enhancing security and confidentiality.
+- By setting the backend protocol to HTTPS, the controller will establish secure communication with the backend service, ensuring encrypted data exchange.
+
+Potential issue:
+- Ensure that the NGINX Ingress Controller supports the `backend-protocol` annotation. This annotation should be valid and recognized by the Ingress controller being used.
+
+Troubleshooting steps:
+1. Apply the updated Ingress configuration with the `backend-protocol` annotation.
+2. Check the NGINX Ingress Controller logs for any errors related to the HTTPS backend configuration.
+3. Verify the communication between the load balancer and the backend service using tools like `curl` or `kubectl exec`.
+4. Monitor the NGINX Ingress Controller's behavior to ensure that it is establishing HTTPS communication with the backend service.
+
+By following the provided configuration and guidelines, you should be able to enable HTTPS communication between the load balancer and the backend service using Kubernetes Ingress with NGINX Ingress Controller.",Y,
+14,"You should have to use the relative path in backend or HTML if you are using that.
+
+However you can do one thing
+
+if your all request getting by the application at : www.myserver.com/core and there is no other folder exist or endpoint
+
+you can create some redirection rules like :
+
+www.myserver.com/core -> www.myserver.com/nextcloud/
+once redirect redirected to new URL further another ingress that you have created will take care of the path and serve.
+
+Ingrss example
+
+metadata:
+  name: ingress-test
+  annotations:
+    kubernetes.io/ingress.class: ""nginx""
+    nginx.ingress.kubernetes.io/enable-rewrite-log: ""true""
+    nginx.ingress.kubernetes.io/location-snippet: |
+      location = /core/ {
+        proxy_pass http://[hostname]/nextcloud/;
+        }
+spec:
+still, it depends on your application config and structure.","Based on the provided context, there are a few issues in the existing ingress configuration that need to be addressed. The main issue seems to be related to rewriting paths correctly to handle subpaths within Nextcloud.
+
+Below is a proposed updated Ingress configuration to address the reported issue and allow accessing Nextcloud under `www.myserver.com/nextcloud` with correct path handling for subpaths like images, CSS, and JS files:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nextcloud
+  namespace: homeserver
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  rules:
+  - host: www.myserver.com
+    http:
+      paths:
+      - pathType: ImplementationSpecific
+        path: /nextcloud(/|$)(.*)
+        backend:
+          service:
+            name: nextcloud
+            port:
+              number: 80
+```",N,
+15,"It's possible to achieve what you want, however you will need to use Nginx Ingress to do that, as you will need to use specific annotation - nginx.ingress.kubernetes.io/upstream-vhost.
+
+It was well described in this Github issue based on storage.googleapis.com.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: google-storage-buckets
+spec:
+  type: ExternalName
+  externalName: storage.googleapis.com
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: proxy-assets-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx-ingress
+    nginx.ingress.kubernetes.io/rewrite-target: /[BUCKET_NAME]/[BUILD_SHA]
+    nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+    nginx.ingress.kubernetes.io/upstream-vhost: ""storage.googleapis.com""
+spec:
+  rules:
+  - host: abc.company.com
+    http:
+      paths:
+      - path: /your/path
+        backend:
+          serviceName: google-storage-buckets
+          servicePort: 443
+Depends on your needs, if you would use it on non https you would need to change servicePort to 80 and remove annotation nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS"".
+
+For additional details, you can check other similar Stackoverflow question.
+
+Please remember to not use - in spec.rules.host and spec.rules.http in the same manifest. You should use - only with http, if you don't have host in your configuration.","Based on the context provided, it seems like you are trying to achieve URL forwarding or redirection using Kubernetes Ingress. Here is the response to address the query:
+
+```yaml
+# Define the ExternalName Service to forward traffic to google.com
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-srv
+spec:
+  type: ExternalName
+  externalName: google.com
+
+---
+# Configure the Ingress to handle requests for abc.company.com/google and redirect to google.com
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: test-ingress
+spec:
+  rules:
+  - host: abc.company.com
+    http:
+      paths:
+      - path: /google
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: test-srv
+            port:
+              number: 80
+```",N(Different method),
+16,"Apparently this question is still getting traffic, so I feel like I should update it. I'm no longer using the nginx ingress, so I can't verify this works. According to https://kubernetes.github.io/ingress-nginx/user-guide/ingress-path-matching/:
+
+The ingress controller supports case insensitive regular expressions in the spec.rules.http.paths.path field. This can be enabled by setting the nginx.ingress.kubernetes.io/use-regex annotation to true (the default is false).
+
+The example they provide on the page would cover it:
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: test-ingress-3
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: ""true""
+spec:
+  rules:
+  - host: test.com
+    http:
+      paths:
+      - path: /foo/bar/bar
+        backend:
+          serviceName: test
+          servicePort: 80
+      - path: /foo/bar/[A-Z0-9]{3}
+        backend:
+          serviceName: test
+          servicePort: 80
+Original answer that no longer works.
+
+It appears that the solution is ridiculously simple (at least with an nginx ingress controller) - you just need to prepend the path with ""~ "":
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: cafe-ingress
+spec:
+  tls:
+  - hosts:
+    - cafe.example.com
+    secretName: cafe-secret
+  rules:
+  - host: cafe.example.com
+    http:
+      paths:
+      - path: ~ /t[a-z]a
+        backend:
+          serviceName: tea-svc
+          servicePort: 80
+      - path: /coffee
+        backend:
+          serviceName: coffee-svc
+          servicePort: 80
+Share
+Improve this answer
+Follow","### Validated Solution:
+
+To set up a Kubernetes Ingress rule with a regex path, you need to ensure that you use the correct annotations and configuration. Below is the validated solution with corrected annotations and explanations:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cafe-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: ""true""
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+spec:
+  rules:
+  - host: cafe.example.com
+    http:
+      paths:
+      - pathType: ImplementationSpecific
+        path: /t([a-z])a
+        backend:
+          service:
+            name: tea-svc
+            port:
+              number: 80
+      - pathType: ImplementationSpecific
+        path: /coffee
+        backend:
+          service:
+            name: coffee-svc
+            port:
+              number: 80
+```
+
+### Rationale and Explanations:
+1. The `nginx.ingress.kubernetes.io/use-regex: ""true""` annotation is required to enable the use of regular expressions in the path matching.
+2. The `nginx.ingress.kubernetes.io/rewrite-target: /$1` annotation captures the matching group defined by the regex and rewrites the URI accordingly.
+3. In the `paths` section, each path should have a `pathType` set to `ImplementationSpecific` to define that the path is using a custom implementation-specific logic.
+
+### Potential Issues and Assumptions:
+1. The provided YAML was missing the `pathType` field, which is crucial for ingress configurations with regex paths. Ensure that this field is correctly set based on the requirement.
+2. The usage of regex paths in Ingress rules might sometimes lead to unexpected routing behavior. Validating the regex pattern is essential to ensure correct path matching.
+
+### Debugging Steps:
+1. Apply the updated Ingress YAML using `kubectl apply -f <filename>.yaml`.
+2. Verify the Ingress using `kubectl get ingress cafe-ingress -o wide` to check if the Ingress rule is applied correctly.
+3. Test access to the specified paths using a tool like `curl` to confirm that the regex path matching is working as expected.
+
+By following these steps, you should be able to set up a Kubernetes Ingress rule with a regex path using the nginx ingress controller effectively.",Y,
+17,"limit-rps is a local rate limit settings that is applied on a specific ingress object rather than in a config map provided to the ingress controller.
+
+It will limit the number of requests per second from an IP adress:
+
+nginx.ingress.kubernetes.io/limit-rps: number of requests accepted from a given IP each second. The burst limit is set to this limit multiplied by the burst multiplier, the default multiplier is 5. When clients exceed this limit, limit-req-status-code default: 503 is returned.
+
+Please se below for a dummy example. As you can see nginx.ingress.kubernetes.io/limit-rps: 10 is added under metadata.annotations on the ingress object
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minimal-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/limit-rps: 10
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /testpath
+        pathType: Prefix
+        backend:
+          service:
+            name: test
+            port:
+              number: 80
+It is possible to apply global rate limiting as well, please see the manual for details","```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hop-ingress
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: ""nginx""
+    nginx.ingress.kubernetes.io/limit-rps: ""10"" # Set the limit to 10 requests per second
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: ""5""  # Default burst multiplier is 5
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: example-service
+                port:
+                  number: 80
+```
+
+Explanation:
+- `nginx.ingress.kubernetes.io/limit-rps: ""10""`: Sets the rate limit to 10 requests per second.
+- `nginx.ingress.kubernetes.io/limit-burst-multiplier: ""5""`: Sets the burst multiplier to 5, which means the burst limit will be 10 * 5 = 50 requests.
+- The `path` field under the `http` section defines the path for which the rate limiting will be applied.
+
+Potential Issues or Critical Assumptions:
+- The rate-limiting configuration in the Ingress resource is relying on NGINX Ingress Controller to apply those settings. Ensure that your NGINX Ingress Controller supports and is configured correctly to handle rate limiting.
+- The user might need to verify that there are no conflicting annotations or configurations that could override the rate limiting settings.
+
+Debugging and Troubleshooting:
+1. Ensure that the NGINX Ingress Controller is running and healthy.
+2. Check the NGINX Ingress Controller logs for any errors or warnings related to rate limiting configuration.
+3. Test the rate limiting behavior by sending requests at a higher rate than the configured limit and verifying if requests are being limited as expected.
+4. Consider using tools like `curl` with the appropriate headers to test the rate limiting behavior and analyze the response codes.
+5. Check the NGINX Ingress Controller documentation for any specific troubleshooting steps related to rate limiting configurations.
+
+By following these steps, the user should be able to effectively apply rate limiting using NGINX Ingress in their AKS environment.",Y,
+18,"Ingress path matching can be enabled by setting the
+
+nginx.ingress.kubernetes.io/use-regex annotation to true .
+
+See the description of the use-regex annotation :
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: test-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: ""true""
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: test.com
+    http:
+      paths:
+      - path: /foo/.*
+        pathType: Prefix
+        backend:
+          service:
+            name: test
+            port:
+              number: 80","```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: current-frontend
+  labels:
+    app: current-frontend
+    tier: frontend
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: ""true""
+    kubernetes.io/ingress.class: nginx
+spec:
+  tls:
+    - hosts:
+      - my.domain.com
+      secretName: tls-secret
+  rules:
+    - host: my.domain.com
+      http:
+        paths:
+          - backend:
+              service:
+                name: current-frontend
+                port:
+                  number: 80
+            path: /(.+)
+            pathType: Prefix
+
+```
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: new-service
+  labels:
+    app: new-service
+    tier: frontend
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  tls:
+    - hosts:
+      - my.domain.com
+      secretName: tls-secret
+  rules:
+    - host: my.domain.com
+      http:
+        paths:
+        - backend:
+            service:
+              name: new-service
+              port:
+                number: 80
+          path: /someendpoint
+          pathType: ImplementationSpecific
+        - backend:
+            service:
+              name: new-service
+              port:
+                number: 80
+          path: /
+          pathType: Prefix",Y,
+19,"For the first question, you can use regex in your paths without any problem, you just need to annotate the ingress with the use-regex, at least according to the documentation (https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#use-regex)
+
+Something like:
+
+metadata:
+  name: your-name
+    annotations:
+      nginx.ingress.kubernetes.io/use-regex: ""true""
+  spec:
+    ...
+or as an alternative, if you use the annotation for rewrite target, the regex should also be enforced.
+
+As for the regex to use, in order to match the start of a path, for example all paths starting with something, like something_first or something_another, you could go for the simple:
+
+something_[a-zA-Z0-9]*
+For the second question I'm not sure of what you are asking, exactly. The Ingress is supposed to be used with http or https requests and those should provide a path. If you want to simply expose a service outside at a given port, you could go for a LoadBalancer service.
+
+Internally, the service you want to access with just a port answers in http at the root path? Or does something different? If it answers only at the root path, you could match all paths in the request to the root path.
+
+As for how you could make all paths of the request rewrite to root, you could go with a rewrite annotation, such as:
+
+nginx.ingress.kubernetes.io/rewrite-target: /
+For more info on this annotation, check the documentation because it can do a lot of things (https://kubernetes.github.io/ingress-nginx/examples/rewrite/)
+
+Also take in mind that if you want to rewrite two services in two different places, you need to split the Ingress into two separate ingresses
+
+Share
+Improve this answer
+Follow","To address your three issues with the Ingress configurations in YAML format based on the provided information, here are the annotations you can use:
+
+1. Correctly implement regex to match the first part of a path in Ingress:
+```yaml
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: search-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: ""true""
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /^\/search_[0-9A-Z]{9}
+        backend:
+          serviceName: global-search-service
+          servicePort: 5050
+```
+
+2. Access a service with no path, just port using an iframe:
+If you just need to access the service by port, without specifying a path, you can use the following configuration:
+```yaml
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: chart-ingress
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          serviceName: chart-display
+          servicePort: 10000
+```
+
+3. Host two different React apps at root paths using Ingress:
+To host two React apps at root paths, you can differentiate them based on the host header. Here's a sample configuration for your scenario:
+```yaml
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: react-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+  - host: admin.example.com
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: web2-service
+          servicePort: 2000
+  - host: normal.example.com
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: web1-service
+          servicePort: 1000
+```
+
+Make sure to replace `admin.example.com` and `normal.example.com` with your actual domain names.",Y,
+20,"TL;DR
+nginx.ingress.kubernetes.io/rewrite-target: /$2
+path: /webservice($|/)(.*)
+Explanation
+The problem is from that line in your ingress:
+
+nginx.ingress.kubernetes.io/rewrite-target: /
+
+You're telling nginx to rewrite your url to / whatever it matched.
+
+/webservice => /
+/webservice/data/office/getOffice => /
+To do what you're trying to do use regex, here is a simple example:
+
+ apiVersion: networking.k8s.io/v1beta1
+ kind: Ingress
+ metadata:
+   name: stack-ingress
+   annotations:
+     nginx.ingress.kubernetes.io/rewrite-target: /$2
+     nginx.ingress.kubernetes.io/use-regex: ""true""
+  spec:
+   rules:
+    - host: hello-world.info
+    - http:
+        paths:
+        - path: /
+          backend:
+            serviceName: service-ngstack --> frondend
+            servicePort: 80
+        - path: /webservice($|/)(.*)
+          backend:
+            serviceName: service-wsstack --> backend
+            servicePort: 80
+This way you're asking nginx to rewrite your url with the second matching group. Finally it gives you:
+
+/webservice => /
+/webservice/data/office/getOffice => /data/office/getOffice","Based on the provided information and the issue you are facing, it seems that the path routing in the Ingress controller is not correctly redirecting the requests to the backend service. To fix this issue and properly route requests to the NodeJs backend service running on `/webservice`, you can use NGINX Ingress annotations for path rewriting.
+
+Here is the updated Ingress configuration with the necessary annotations to properly route the requests:
+
+```yaml
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: stack-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: ""true""
+spec:
+  rules:
+  - host: hello-world.info
+    http:
+      paths:
+      - path: /webservice(/|$)(.*)
+        backend:
+          serviceName: service-wsstack
+          servicePort: 80
+      - path: /
+        backend:
+          serviceName: service-ngstack
+          servicePort: 80
+```
+
+In this configuration:
+- The `nginx.ingress.kubernetes.io/rewrite-target` annotation uses `$2` as a placeholder to capture the remaining part of the URI after `/webservice`.
+- The `nginx.ingress.kubernetes.io/use-regex: ""true""` annotation enables regex matching for the path.
+- The first path definition is for `/webservice`, which will route requests to the backend service `service-wsstack`.
+- The second path definition is for `/`, which will route requests to the frontend service `service-ngstack`.
+
+Applying this updated Ingress definition should redirect `/webservice` requests to the backend service as expected.
+
+You can apply this configuration using the `kubectl apply -f ingress.yaml` command. After applying the changes, test the endpoints again with `curl` to ensure the routing is working correctly.
+
+If you encounter any issues or need further assistance, feel free to ask for help.",Y,
+21,"you need to check few things.
+
+Check the output of command ""kubectl get ingress"", if you can see the resources.
+What annotations you are using currently. Below is the list of few example annotations which can be used.
+nginx.ingress.kubernetes.io/secure-backends: ""false""
+nginx.ingress.kubernetes.io/backend-protocol: ""HTTP""
+nginx.ingress.kubernetes.io/affinity: ""cookie""
+nginx.ingress.kubernetes.io/session-cookie-name: ""route""
+nginx.ingress.kubernetes.io/session-cookie-hash: ""sha1""
+nginx.ingress.kubernetes.io/use-regex: ""true""
+nginx.ingress.kubernetes.io/session-cookie-path: ""/""
+These annotations are really important
+
+nginx.ingress.kubernetes.io/use-regex: ""true""
+nginx.ingress.kubernetes.io/session-cookie-path: ""/""","Based on the provided context and the question regarding routing issues in the nginx ingress configuration, here is a validated solution:
+
+### Detailed Answer:
+
+1. The ingress definition is missing the `pathType` field within the `paths` definition, which can lead to unexpected behavior. The `pathType` field should be set to `ImplementationSpecific` since the behavior implemented by NGINX ingress classifies it as such.
+
+2. Since the original configuration does not use the rewrite annotation, the routing rules might not match the backend service paths properly.
+
+3. To address the issue and correctly direct traffic to the respective services, the following annotations and adjustments should be made:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/use-regex: ""true""
+spec:
+  rules:
+    - host: my-domain.com
+      http:
+        paths:
+          - path: /api(/.*|$)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-service
+                port:
+                  number: 8080
+          - path: /demo(/.*|$)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: demo-service
+                port:
+                  number: 4096
+          - path: /(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: ui
+                port:
+                  number: 80",Y,
+22,"As you pointed out, looks like nginx is proxying your https request to ipWhichEndsWith.249:8443, which is an HTTPS endpoint, using http as protocol.
+
+You should add the following annotation to your PodSpec:
+
+LATEST
+
+This annotation was added to replace the deprecated annotation since 0.18.0
+
+#2871 Add support for AJP protocol
+
+nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+DEPRECATED
+
+This annotation was deprecated in 0.18.0 and removed after the release of 0.20.0
+
+#3203 Remove annotations grpc-backend and secure-backend already deprecated
+
+nginx.ingress.kubernetes.io/secure-backends: ""true""
+This should make nginx forward your request to the pods with https.","In the provided context, the issue seems to be related to the TLS handshake error and incorrect handling of SSL traffic for the Kubernetes Dashboard via the NGINX Ingress Controller. The Ingress configuration for the Dashboard needs to be adjusted to ensure proper redirection of HTTPS traffic.
+
+Here is a validated and comprehensive response to address the query:
+
+### Ingress Configuration for Dashboard:
+
+```yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-passthrough: ""true""
+    nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+  name: dashboard-ingress
+  namespace: kube-system
+spec:
+  tls:
+  - hosts:
+    - serverdnsname
+    secretName: kubernetes-dashboard-certs
+  rules:
+  - host: serverdnsname
+    http:
+      paths:
+      - path: /dashboard
+        backend:
+          serviceName: kubernetes-dashboard
+          servicePort: 443
+```
+",Y,
+23,"Try to add nginx.ingress.kubernetes.io/backend-protocol: https annontation to your ingress definition.
+
+Using backend-protocol annotations is possible to indicate how NGINX should communicate with the backend service. By default NGINX uses HTTP.
+
+Take a look: ingress-tls, backend-protocol.
+
+Share
+Improve this answer
+Follow","To fix the issue where you are unable to access your backend service through the DNS due to TLS requirements, you need to update your Ingress annotations to ensure that all traffic is redirected to HTTPS. Here is the corrected YAML for your Service and Ingress with the necessary annotations:
+
+Service YAML:
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-Core
+  namespace: namespace
+spec:
+  clusterIP: xxx.xxx.xxx.xxx
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/instance: core
+    app.kubernetes.io/name: app
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+```
+
+Ingress YAML:
+```yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: ""true""
+    nginx.ingress.kubernetes.io/force-ssl-redirect: ""true""
+  name: core-app-core
+  namespace: namespace
+spec:
+  rules:
+    - host: hostname
+      http:
+        paths:
+          - backend:
+              serviceName: app-Core
+              servicePort: 8080
+            path: /backend(/.*|$)
+          - backend:
+              serviceName: app-Core
+              servicePort: 8080
+            path: /camunda(/.*|$)
+  tls:
+    - hosts:
+        - hostname
+      secretName: your-tls-secret-name
+status:
+  loadBalancer:
+    ingress:
+      - ip: xxx.xxx.xxx.xxx
+```
+
+Make sure to replace `your-tls-secret-name` with the name of the TLS secret containing your self-signed certificates. The added annotations `nginx.ingress.kubernetes.io/ssl-redirect: ""true""` and `nginx.ingress.kubernetes.io/force-ssl-redirect: ""true""` will ensure that all traffic is redirected to HTTPS.",N,
+24,"It looks like you are missing an annotation on your ingress.
+
+ingress.yaml - snippet
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    # This annotation matters!
+    nginx.ingress.kubernetes.io/backend-protocol: ""GRPC""
+According to this snippet from the official Kubernetes nginx ingress documentation:
+
+Backend Protocol
+Using backend-protocol annotations is possible to indicate how NGINX should communicate with the backend service. (Replaces secure-backends in older versions) Valid Values: HTTP, HTTPS, GRPC, GRPCS and AJP
+
+By default NGINX uses HTTP.
+
+Example:
+
+nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+
+As an aside, there's a chance you might need to specify GRPCS instead of GRPC since it appears you are using SSL.
+
+Another thing to call out is that the docs mention that this annotation replaces 'secure-backends' in older versions, which could be where you found the grpc-backend annotation you are currently using.","To fix the connection timed out issue for deploying a gRPC service in Azure Kubernetes Service using NGINX Ingress annotations, you can update the annotations in the Ingress resource YAML as follows:
+
+```yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: {{ template """"fullname"""" . }}
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/grpc-backend: ""true""
+    nginx.ingress.kubernetes.io/ssl-redirect: ""true""
+    nginx.ingress.kubernetes.io/rewrite-target: """" # update the rewrite target based on the gRPC service path
+spec:
+  tls:
+    - secretName: aks-ingress-tls
+  rules:
+    - http:
+        paths:
+          - backend:
+              serviceName: {{ template """"fullname"""" . }}
+              servicePort: 50051
+            path: /{servicename}-grpc(/|$)(.*)
+```
+
+In this updated YAML:
+
+- The `nginx.ingress.kubernetes.io/grpc-backend: ""true""` annotation specifies that the backend service is a gRPC service.
+- The `nginx.ingress.kubernetes.io/ssl-redirect: ""true""` annotation enforces SSL redirection for secure communication.
+- The `nginx.ingress.kubernetes.io/rewrite-target: """"` annotation should be updated to reflect the correct rewrite target for the gRPC service path.
+- Make sure to replace `""$2""` with the appropriate value that corresponds to the gRPC service path.
+- Adjust the `serviceName` and `servicePort` values accordingly based on your gRPC service configuration.",Y,
+25,"We were able to solve this by adding the following to the metadata of our Ingress
+
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+    nginx.ingress.kubernetes.io/configuration-snippet: |-
+      proxy_ssl_server_name on;
+      proxy_ssl_name $host;
+The first command turns on HTTPS for the backend protocol, and the second command enables SNI","To prevent the initiation of HTTP requests to the Endpoints object which is configured with a TCP connection on port 443, you can specify the protocol to be used by the Ingress controller with the `nginx.ingress.kubernetes.io/service-protocol` annotation. In this case, setting the protocol to `TCP` will ensure that the Ingress controller communicates with the Endpoints object over TCP instead of HTTP.
+
+Here is the YAML configuration with the necessary annotations:
+
+```yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: my-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/service-upstream: ""true""
+    nginx.ingress.kubernetes.io/service-protocol: ""TCP""
+spec:
+  rules:
+  - host: dev.somehost.com
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: my-service
+          servicePort: 443
+```
+
+Make sure to replace `my-service` with the name of your headless service.
+
+By specifying the `nginx.ingress.kubernetes.io/service-protocol: ""TCP""` annotation in the Ingress configuration, you can ensure that the communication between the Ingress controller and the Endpoints object on port 443 occurs over TCP, resolving the issue of the connection being reset when using HTTP in the upstream request.",N,
+26,"From the docs here you need to add this annotation
+
+nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+Using backend-protocol annotations is possible to indicate how NGINX should communicate with the backend service. (Replaces secure-backends in older versions) Valid Values: HTTP, HTTPS, GRPC, GRPCS and AJP
+
+By default NGINX uses HTTP","To make the Ingress connect with HTTPS servers in pods, you need to configure the Ingress correctly. Below are the fixed annotations in YAML format for your Ingress resource based on the provided information:
+
+```yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: k8s-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+spec:
+  rules:
+  - http:
+      paths:
+        - path: /api-rest
+          backend:
+            serviceName: api-rest
+            servicePort: 8080
+        - path: /auth
+          backend:
+            serviceName: auth-entry
+            servicePort: 8080
+```
+
+With the updated `nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""` annotation, the Ingress will be configured to connect with HTTPS servers in pods. Make sure to replace the placeholders `api-rest` and `auth-entry` with the actual service names corresponding to your pods.
+
+Please apply this YAML configuration to your Kubernetes cluster to fix the connectivity issue with HTTPS servers in pods through the Nginx Ingress.",Y,
+27,"Attention: This answer applies to the ingress-nginx solution provided by the kubernetes organisation on github (https://github.com/kubernetes/ingress-nginx)
+
+If you want to use load balancing mechanisms in k8s you should use services instead and start multiple instances behind that service that way k8s will do the load balancing. If you want to use different versions of your backend (e.g. prod and test) your way of separating them is fine
+
+if your service is only reachable via https you need to add the following annotation to your ingress yaml: (documentation)
+
+nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+To secure ingress itself take a look at this: https://kubernetes.io/docs/concepts/services-networking/ingress/#tls
+
+But if you want that the backend services decrypt the TLS communication use the following annotation instead: (documentation)
+
+nginx.ingress.kubernetes.io/ssl-passthrough: ""true""
+Edit:
+
+The Ingress YAML should look like this if you want to reach the backend via TLS:
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-name
+  namespace: namespace-name 
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+spec:
+  rules:
+  - http:
+      paths:
+      - backend:
+          serviceName: service
+          servicePort: 9443
+        path: /carbon
+      - backend:
+          serviceName: service2
+          servicePort: 9443
+        path: /oauth
+The Ingress YAML should look like this if you want to reach the backend via TLS with TLS decryption in the ingress controller:
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-name
+  namespace: namespace-name 
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+spec:
+  tls:
+  - hosts:
+    - app.myorg.com
+    secretName: tls-secret 
+  rules:
+  - http:
+      paths:
+      - backend:
+          serviceName: service
+          servicePort: 9443
+        path: /carbon
+      - backend:
+          serviceName: service2
+          servicePort: 9443
+        path: /oauth
+It's important to note that tls-secret is the name of a SecretConfig with a valid Certificate issued for the host (app.myorg.com)
+
+The Ingress YAML should look like this if you want to reach the backend via TLS with TLS decryption in the backend:
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-name
+  namespace: namespace-name 
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-passthrough: ""true""
+spec:
+  rules:
+  - http:
+      paths:
+      - backend:
+          serviceName: service
+          servicePort: 9443
+        path: /carbon
+      - backend:
+          serviceName: service2
+          servicePort: 9443
+        path: /oauth
+I never tested the last version myself so i don't know if that actually works but I'd strongly advise reading this passage for that variant.","To configure the Ingress to receive HTTPS requests and forward them to HTTPS backend services based on URL/path, you can use the following annotations in your Ingress YAML file:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-ingress
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-passthrough: ""true""
+    nginx.ingress.kubernetes.io/backend-protocol: ""https""
+spec:
+  rules:
+  - host: your-host.com
+    http:
+      paths:
+      - path: /carbon
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: service
+            port:
+              number: 9443
+      - path: /oauth
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: service2
+            port:
+              number: 9443
+``` 
+
+With these annotations, the Ingress controller will handle incoming HTTPS requests and forward them to the respective backend services over HTTPS based on the specified URL paths.",Y,
+28,"If you want SSL termination to happen at the server instead at the ingress/LoadBalancer, you can use a something called SSL Passthrough. Load Balancer will then not terminate the SSL request at the ingress but then your server should be able to terminate those SSL request. Use these configuration in your ingress.yaml file depending upon your ingress class
+
+   annotations:
+    ingress.kubernetes.io/ssl-passthrough: ""true""
+    nginx.ingress.kubernetes.io/ssl-passthrough: ""true""
+
+There is one more annotation that you can use in nginx. backend-protocol annotations is possible to indicate how NGINX should communicate with the backend service.
+
+nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+By default NGINX uses HTTP.
+
+Read more about it here https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/annotations/#backend-protocol","To remove SSL termination from Kubernetes Ingress, you can use the `nginx.ingress.kubernetes.io/ssl-passthrough` annotation with the value set to `true`. This will instruct the controller to send TLS connections directly to the backend without decrypting the communication. Here is the YAML configuration for your Ingress resource to add the required annotation:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-passthrough: ""true""
+    kubernetes.io/ingress.class: nginx
+    kubernetes.io/tls-acme: ""true""
+  name: development-auto-deploy
+  namespace: ******
+spec:
+  rules:
+    - host: ******
+      http:
+        paths:
+          - backend:
+              service:
+                name: development-auto-deploy
+                port:
+                  number: 443
+            path: /
+            pathType: ImplementationSpecific
+  tls:
+    - hosts:
+        - ******
+        - ******
+      secretName: development-auto-deploy-tls
+```
+
+After applying this annotation to your Ingress resource, the controller will send TLS connections directly to your backend pods without terminating SSL at the Ingress level. This should resolve the issue of SSL termination in Kubernetes Ingress.",Y,
+29,"Use below annotation in ingress resourece
+
+nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+From the docs
+
+Using backend-protocol annotations is possible to indicate how NGINX should communicate with the backend service. (Replaces secure-backends in older versions) Valid Values: HTTP, HTTPS, GRPC, GRPCS, AJP and FCGI
+
+By default NGINX uses HTTP while forwarding the request to backend pod which leads to 400 The plain HTTP request was sent to HTTPS port because the backend pod is expecting HTTPS request.","Based on the issue you are facing with the NGINX Ingress Controller configuration, you need to apply specific annotations to the Ingress resource to make sure the HTTPS requests are handled correctly. 
+
+Here is a YAML example with the required annotations for your Ingress configuration:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: ""true""
+    nginx.ingress.kubernetes.io/backend-protocol: ""HTTPS""
+    nginx.ingress.kubernetes.io/proxy-redirect-from: ""http://""
+    nginx.ingress.kubernetes.io/proxy-redirect-to: ""https://""
+spec:
+  rules:
+  - host: staging.vs-creator.iotcrawler.eu
+    http:
+      paths:
+      - path: /
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: your-service-name
+            port:
+              number: 443
+```",Y,
+30,"You can use following command to delete the POD forcefully.
+
+<code>kubectl delete pod &lt;PODNAME&gt; --grace-period=0 --force --namespace
+</code>","### Common Reasons for Pods Stuck in Terminating Status
+
+1. **Node Issues**: If the node where the pods are running is experiencing issues (e.g., network connectivity problems, not enough resources, kubelet not responding), it might fail to delete the pods.
+
+2. **Finalizers**: Pods might have finalizers that are preventing them from being deleted immediately. Finalizers are mechanisms in Kubernetes that allow you to perform cleanup tasks before the resource is fully deleted.
+
+3. **Resource Quotas and Limits**: If there are resource constraints, the operations related to pod deletion might not be prioritized or could be delayed.
+
+4. **Kubernetes Bugs or Version Issues**: Sometimes specific versions of Kubernetes might have bugs that cause unexpected behavior including issues with terminating pods.
+
+### Steps to Troubleshoot and Resolve
+
+#### Step 1: Check Node Health
+Ensure that the nodes are healthy and are able to communicate with the Kubernetes control plane. You can check the status of the nodes using:
+```bash
+kubectl get nodes
+```
+If any node is in a `NotReady` state, investigate the kubelet logs on that node:
+```bash
+journalctl -u kubelet
+```
+
+#### Step 2: Inspect the Pod and Check for Finalizers
+Check if the pods have any finalizers that might be blocking their deletion:
+```bash
+kubectl get pod pod-186o2 -o json | jq '.metadata.finalizers'
+```
+If there are finalizers that are no longer needed or are causing issues, you can remove them manually:
+```bash
+kubectl patch pod pod-186o2 -p '{""metadata"":{""finalizers"":null}}'
+```
+
+#### Step 3: Force Delete the Pods
+If the pods are still stuck and you've ruled out issues with finalizers and node health, you can try to force delete the pods:
+```bash
+kubectl delete pod pod-186o2 --grace-period=0 --force
+```
+This command tells Kubernetes to delete the pod immediately without waiting for confirmation from the kubelet that the pod has been terminated.
+
+#### Step 4: Check for Kubernetes and Kubelet Logs
+If the issue persists, check the logs for the Kubernetes control plane and kubelet to look for any errors or warnings that might indicate what is preventing the pods from terminating:
+```bash
+# Check kubelet logs
+journalctl -u kubelet
+
+# Check Kubernetes control plane logs (if accessible, depends on setup)
+journalctl -u kube-apiserver
+journalctl -u kube-controller-manager
+```",Y,
+31,"As the handbook describes, you can reuse the Docker daemon from Minikube with eval $(minikube docker-env).
+So to use an image without uploading it, you can follow these steps:
+
+Set the environment variables with eval $(minikube docker-env)
+Build the image with the Docker daemon of Minikube (e.g., docker build -t my-image .)
+Set the image in the pod specification like the build tag (e.g., my-image)
+Set the imagePullPolicy to Never, otherwise Kubernetes will try to download the image.
+
+Important note: You have to run eval $(minikube docker-env) on each terminal you want to use, since it only sets the environment variables for the current shell session.","To use local Docker images directly with Minikube without needing to upload them to a registry, you can leverage Minikube's ability to reuse the Docker daemon. This approach simplifies the process as Minikube can directly use Docker images that are already built on your machine.
+
+Here are the steps to achieve this:
+
+### Step 1: Start Minikube with the Docker Driver
+
+Ensure Minikube is using the Docker driver, which allows you to use Docker images directly from your local Docker daemon.
+
+```bash
+minikube start --driver=docker
+```
+
+### Step 2: Set Up Your Environment to Use Minikube's Docker Daemon
+
+Run this command to configure your shell to use the Docker daemon inside the Minikube instance. This means any Docker command you run in this shell session will interact with Minikube  s Docker daemon.
+
+```bash
+eval $(minikube docker-env)
+```
+
+### Step 3: Build or Pull Your Docker Images
+
+Now, any Docker operations you perform will use Minikube's Docker environment. If you haven't already built your Docker images, you can build them now, and they will be directly available to Minikube:
+
+```bash
+docker build -t fluxcapacitor/hdfs:latest .
+```
+
+Or if you already have the image on your local machine, it's already accessible to Minikube after the previous step.
+
+### Step 4: Create Kubernetes Deployments Using Local Images
+
+When creating deployments in Kubernetes, set the `imagePullPolicy` to `Never` to force Kubernetes to use the local image rather than pulling it from a registry.
+
+Here  s how you can run your Docker container in Minikube:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hdfs-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hdfs
+  template:
+    metadata:
+      labels:
+        app: hdfs
+    spec:
+      containers:
+      - name: hdfs
+        image: fluxcapacitor/hdfs:latest
+        ports:
+        - containerPort: 8989
+        imagePullPolicy: Never
+```
+
+Save this file as `deployment.yaml` and apply it with:
+
+```bash
+kubectl apply -f deployment.yaml
+```
+
+### Step 5: Verify the Deployment
+
+Check the status of your pods to ensure that the deployment was successful and the pod is running:
+
+```bash
+kubectl get pods
+```",Y,
+32,"There is no command to do exactly what you asked.
+Here are some close matches.
+Be careful before running any of these commands.  Make sure you are connected to the right cluster, if you use multiple clusters.  Consider running. kubectl config view first.
+You can delete all the pods in a single namespace with this command:
+kubectl delete --all pods --namespace=foo
+
+You can also delete all deployments in namespace which will delete all pods attached with the deployments corresponding to the namespace
+kubectl delete --all deployments --namespace=foo
+
+You can delete all namespaces and every object in every namespace (but not un-namespaced objects, like nodes and some events) with this command:
+kubectl delete --all namespaces
+
+However, the latter command is probably not something you want to do, since it will delete things in the kube-system namespace, which will make your cluster not usable.
+This command will delete all the namespaces except kube-system, which might be useful:
+for each in $(kubectl get ns -o jsonpath=&quot;{.items[*].metadata.name}&quot; | grep -v kube-system);
+do
+  kubectl delete ns $each
+done
+","To delete all pods in all namespaces using Kubernetes, you can use the `kubectl` command-line tool. This tool interacts with the Kubernetes API to manage the state of your Kubernetes cluster, including creating, updating, and deleting resources like pods.
+
+Here's how you can delete all pods in all namespaces:
+
+### Using kubectl Command
+
+You can use the following command to delete all pods in all namespaces:
+
+```bash
+kubectl delete pods --all --all-namespaces
+```
+
+#### Explanation:
+
+- `kubectl delete pods`: This command tells `kubectl` to delete resources of type pod.
+- `--all`: This flag specifies that you want to delete all pods.
+- `--all-namespaces`: This flag specifies that the operation should be performed across all namespaces.
+
+### Important Considerations
+
+1. **Impact on Applications**: Deleting all pods can have a significant impact on your applications running in the cluster. All stateless applications will face downtime until the pods are recreated (if they are managed by controllers like Deployments, StatefulSets, etc.). For stateful applications, you might lose data if not properly backed up or if they are not using persistent storage.
+
+2. **Controllers and Orphaned Resources**: If the pods are managed by higher-level controllers like Deployments, ReplicaSets, or StatefulSets, these controllers might immediately try to recreate the pods after they are deleted. To prevent this, you might need to scale down these controllers before deleting the pods or consider deleting the controllers themselves if appropriate.
+
+3. **Namespace Resources**: Deleting pods does not delete other resources in the namespaces, such as services, persistent volume claims, or secrets. You might need to clean up these resources separately if needed.
+
+### Alternative: Deleting Specific Pods or Using Labels
+
+If you need more control over which pods to delete, you can use label selectors to delete only the pods that match certain labels:
+
+```bash
+kubectl delete pods -l app=myapp --all-namespaces
+```
+
+Here, `-l app=myapp` specifies that only pods with the label `app=myapp` should be deleted across all namespaces.",Y,"Upon looking at the docs, there is an API call to delete a single pod, but is there a way to delete all pods in all namespaces?"
+33,"You can switch from local (minikube) to gcloud and back with:
+
+kubectl config use-context CONTEXT_NAME
+
+to list all contexts:
+
+<code>kubectl config get-contexts</code>
+
+You can create different enviroments for local and gcloud and put it in separate yaml files. ","Yes, there is a straightforward way to switch between different Kubernetes environments (contexts) using `kubectl`, the command-line tool for interacting with Kubernetes clusters. This will allow you to manage both your local minikube cluster and your Google Kubernetes Engine (GKE) cluster from your MacBook without needing to manually transfer files or configurations.
+
+### Step 1: Configure `kubectl` to Access Both Clusters
+
+First, ensure that `kubectl` is configured to access both your local minikube cluster and your GKE cluster. You likely already have this setup for minikube, but you'll need to configure access to GKE as well.
+
+For GKE, you can set up access using the following command:
+
+```bash
+gcloud container clusters get-credentials [CLUSTER_NAME] --zone [ZONE] --project [PROJECT_ID]
+```
+
+Replace `[CLUSTER_NAME]`, `[ZONE]`, and `[PROJECT_ID]` with your cluster's name, the zone where your cluster is located, and your Google Cloud project ID, respectively.
+
+This command configures `kubectl` to communicate with your GKE cluster by updating the `kubeconfig` file, typically located at `~/.kube/config`.
+
+### Step 2: Verify Contexts
+
+After setting up access, you can check the available contexts using:
+
+```bash
+kubectl config get-contexts
+```
+
+This command will list all configured contexts. You should see both your minikube and GKE contexts listed.
+
+### Step 3: Switching Contexts
+
+To switch between your local minikube and GKE clusters, use the following `kubectl` command:
+
+```bash
+kubectl config use-context [CONTEXT_NAME]
+```
+
+Replace `[CONTEXT_NAME]` with the name of the context you want to switch to. You can find the context names from the output of the `get-contexts` command.
+
+For example, if your minikube context is named `minikube` and your GKE context is named `gke_[PROJECT_ID]_[ZONE]_[CLUSTER_NAME]`, you can switch to the minikube context like this:
+
+```bash
+kubectl config use-context minikube
+```
+
+And switch to the GKE context like this:
+
+```bash
+kubectl config use-context gke_[PROJECT_ID]_[ZONE]_[CLUSTER_NAME]
+```
+
+### Step 4: Deploying YAML Files
+
+Once you've switched to the desired context, you can apply your YAML files directly to the chosen cluster using:
+
+```bash
+kubectl apply -f [FILE_NAME]
+```
+
+Replace `[FILE_NAME]` with the path to your YAML file.",Y,"I have Kubernetes operating well in two different environments, namely in my local environment (MacBook running minikube) and as well as on Google's Container Engine (GCE, Kubernetes on Google Cloud). I use the MacBook/local environment to develop and test my YAML files and then, upon completion, try them on GCE.
+Currently I need to work with each environment separately: I need to edit the YAML files in my local environment and, when ready, (git) clone them to a GCE environment and then use/deploy them.  This is a somewhat cumbersome process.
+Ideally, I would like to use kubectl from my Macbook to easily change between the local minikube or GCE Kubernetes environments and to easily determine where the YAML files are used. Is there a simple way to switch contexts to do this?"
+34,"You need to delete the deployment, which should in turn delete the pods and the replica sets https://github.com/kubernetes/kubernetes/issues/24137
+To list all deployments:
+kubectl get deployments --all-namespaces
+
+Then to delete the deployment:
+kubectl delete -n NAMESPACE deployment DEPLOYMENT
+
+Where NAMESPACE is the namespace it's in, and DEPLOYMENT is the name of the deployment. If NAMESPACE is default, leave off the -n option altogether.
+In some cases it could also be running due to a job or daemonset.
+Check the following and run their appropriate delete command.
+kubectl get jobs
+
+kubectl get daemonsets.app --all-namespaces
+
+kubectl get daemonsets.extensions --all-namespaces
+","It appears that the issue you're encountering with the `busybox` pod continuously being recreated despite deletion attempts might be due to a higher-level controller that is managing the pod. In Kubernetes, such behavior is typically controlled by ReplicationControllers, ReplicaSets, or Deployments. Since you used the `kubectl run` command, it's possible that a Deployment or ReplicaSet was created automatically to manage the pod.
+
+Here are the steps to resolve this issue:
+
+### Step 1: Identify the Controller
+First, let's identify if there is a Deployment or ReplicaSet that is managing the pod. You can do this by checking for any Deployments or ReplicaSets in your namespace.
+
+```bash
+kubectl get deployments
+kubectl get replicasets
+```
+
+### Step 2: Delete the Deployment or ReplicaSet
+If you find a Deployment or ReplicaSet that seems to be managing your `busybox` pod, you should delete it. Deleting the Deployment or ReplicaSet will stop it from recreating the pod.
+
+If it's a Deployment, delete it using:
+```bash
+kubectl delete deployment <deployment-name>
+```
+
+If it's a ReplicaSet, delete it using:
+```bash
+kubectl delete replicaset <replicaset-name>
+```
+
+Replace `<deployment-name>` or `<replicaset-name>` with the actual name of the Deployment or ReplicaSet managing your pod.
+
+### Step 3: Delete Any Remaining Pods
+After deleting the controlling object, you can then delete any remaining pods that were managed by it.
+
+```bash
+kubectl delete pod --selector=run=busybox --grace-period=0 --force
+```
+
+This command deletes all pods with the label `run=busybox`, which is typically set by the `kubectl run` command.
+
+### Explanation
+The reason why the pod keeps being recreated is likely due to a ReplicaSet or Deployment automatically created by the `kubectl run` command. In Kubernetes, these controllers are designed to maintain a set number of replicas of a pod, and they will recreate pods to maintain the desired state if pods are deleted or terminated unexpectedly.
+
+By deleting the controller (Deployment or ReplicaSet), you remove the mechanism that Kubernetes uses to ensure the desired number of pods is running. Once the controller is deleted, you can then manually delete the pods without them being recreated.
+
+### Additional Note
+In newer versions of Kubernetes, the `--generator` flag used in your `kubectl run` command is deprecated. The `kubectl run` command now creates a pod directly without a Deployment unless specifically instructed to do otherwise. If you intend to create a Deployment using `kubectl run`, you should explicitly specify the kind of resource to create. For example:
+```bash
+kubectl create deployment busybox --image=busybox
+```
+This command creates a Deployment rather than a standalone pod.",Y,"I have started pods with command
+<code>
+$ kubectl run busybox \
+--image=busybox \
+--restart=Never \
+--tty \
+-i \
+--generator=run-pod/v1
+</code>
+Something went wrong, and now I can't delete this Pod.
+I tried using the methods described below but the Pod keeps being recreated.
+$ kubectl delete pods busybox-na3tm
+pod busybox-na3tm deleted
+
+$ kubectl get pods
+NAME                                     READY     STATUS              RESTARTS   AGE
+busybox-vlzh3                            0/1       ContainerCreating   0          14s
+
+$ kubectl delete pod busybox-vlzh3 --grace-period=0
+
+$ kubectl delete pods --all
+pod busybox-131cq deleted
+pod busybox-136x9 deleted
+pod busybox-13f8a deleted
+pod busybox-13svg deleted
+pod busybox-1465m deleted
+pod busybox-14uz1 deleted
+pod busybox-15raj deleted
+pod busybox-160to deleted
+pod busybox-16191 deleted
+
+$ kubectl get pods --all-namespaces
+NAMESPACE   NAME            READY     STATUS              RESTARTS   AGE
+default     busybox-c9rnx   0/1       RunContainerError   0          23s
+"
+35,"Those are two different approaches:
+Imperative Management
+kubectl create is what we call Imperative Management. On this approach you tell the Kubernetes API what you want to create, replace or delete, not how you want your K8s cluster world to look like.
+Declarative Management
+kubectl apply is part of the Declarative Management approach, where changes that you may have applied to a live object (i.e. through scale) are &quot;maintained&quot; even if you apply other changes to the object.
+
+You can read more about imperative and declarative management in the Kubernetes Object Management documentation.
+
+They do different things. If the resource exists, kubectl create will error out and kubectl apply will not error out.","The three operations you're referring to`kubectl create`, `kubectl replace`, and `kubectl apply`are indeed similar in that they all interact with resources in a Kubernetes cluster, but they serve different purposes and operate in distinct ways. Let's break down each command and discuss their use cases and how they differ under the hood.
+?
+### 1. `kubectl create`
+**Purpose:** This command is used to create a new resource in a Kubernetes cluster. It takes a file or stdin that contains the configuration of the resource and creates it based on this specification.
+?
+**Use Case:** Use `kubectl create` when you need to create new resources in your cluster and you are sure that these resources do not exist. It's straightforward and explicit, making it ideal for initial setups and scripts where you want to ensure that resources are created from scratch.
+?
+**Under the Hood:** When you run `kubectl create`, Kubernetes takes the YAML or JSON definition, validates it, and then sends it to the API server which creates the resource. If the resource already exists, the command will fail.
+?
+**Example:**
+```bash
+kubectl create -f my-resource.yaml
+```
+?
+### 2. `kubectl replace`
+**Purpose:** This command replaces a resource in your cluster with a new version you specify. It requires that the resource already exists.
+?
+**Use Case:** Use `kubectl replace` when you need to forcefully replace an existing resource with a new one. This is useful for cases where you want to overwrite all the existing specifications of a resource with a new set of specifications.
+?
+**Under the Hood:** `kubectl replace` first deletes the existing resource and then creates a new one with the specified configuration. This means all the existing settings are removed and replaced, which can lead to service disruption if not managed carefully.
+?
+**Example:**
+```bash
+kubectl replace -f updated-resource.yaml
+```
+?
+### 3. `kubectl apply`
+**Purpose:** This command is used to apply a configuration to a resource in a cluster. It creates the resource if it does not exist, or updates it if it does, while attempting to preserve runtime changes.
+?
+**Use Case:** Use `kubectl apply` for managing applications through files defining declarative configurations. It is ideal for version-controlled configuration that needs to be pushed to a cluster, as it merges changes incrementally.
+?
+**Under the Hood:** `kubectl apply` uses a three-way merge strategy. It compares the current configuration (`live`), the input configuration (`new`), and the last-applied configuration, then merges the changes. This approach helps in preserving manual changes made to the live configuration, which are not overwritten by the configuration file.
+?
+**Example:**
+```bash
+kubectl apply -f resource.yaml
+```
+?
+### Summary
+- **`kubectl create`** is for creating new resources.
+- **`kubectl replace`** is for replacing existing resources entirely.
+- **`kubectl apply`** is for updating existing resources while preserving runtime changes.
+?
+Each command is tailored for different scenarios in the lifecycle and management of Kubernetes resources, providing flexibility and control over how changes are applied to the cluster.",Y,"What I understood by the documentation is that:
+
+kubectl create, Creates a new k8s resource in the cluster
+
+kubectl replace, Updates a resource in the live cluster
+
+If I want to do create + replace (Reference)
+
+My questions are: Why are there three operations for doing the same task in a cluster?
+What are the use cases for these operations?
+How do they differ from each other under the hood?
+"
+36,"The issue #47538 that @jdf mentioned is now closed and this is now possible. The original implementation can be found here but the syntax has changed.
+With kubectl v1.10.1+ the command is:
+kubectl create job --from=cronjob/<cronjob-name> <job-name> -n namespace-name
+It seems to be backwardly compatible with older clusters as it worked for me on v0.8.x.","To manually trigger a Kubernetes Scheduled Job (also known as a CronJob), you can create a Job from the CronJob's template. This allows you to run the job immediately, outside of its scheduled times. Here's how you can do it:
+
+### Step-by-Step Guide to Manually Trigger a Kubernetes CronJob
+
+1. **Get the CronJob YAML**: First, you need to get the YAML definition of the CronJob you want to trigger. You can do this by using the `kubectl` command. Replace `<cronjob-name>` with the name of your CronJob and `<namespace>` with the namespace it resides in (if it's not in the default namespace).
+
+   ```bash
+   kubectl get cronjob <cronjob-name> -n <namespace> -o yaml
+   ```
+
+2. **Create a Job YAML from CronJob**: Extract the `jobTemplate` section from the CronJob YAML. This section contains the template that Kubernetes uses to create new Jobs according to the schedule. You'll need to make a slight modification to use it as a standalone Job.
+
+   Here's an example of what the Job YAML might look like, extracted and modified from the CronJob's `jobTemplate`:
+
+   ```yaml
+   apiVersion: batch/v1
+   kind: Job
+   metadata:
+     name: <job-name>  # You can specify a unique name for the job
+     namespace: <namespace>
+   spec:
+     template:
+       spec:
+         containers:
+         - name: <container-name>
+           image: <image>
+           # Add other container specs here
+         restartPolicy: Never
+   ```
+
+   Make sure to replace `<job-name>`, `<namespace>`, `<container-name>`, and `<image>` with appropriate values.
+
+3. **Create the Job**: Once you have your Job YAML ready, you can create the Job in Kubernetes by applying the YAML file:
+
+   ```bash
+   kubectl apply -f job.yaml
+   ```
+
+   Alternatively, if you prefer not to create a YAML file, you can use `kubectl create` directly from the command line:
+
+   ```bash
+   kubectl create job --from=cronjob/<cronjob-name> <job-name> -n <namespace>
+   ```
+
+   This command creates a new Job based on the template of the specified CronJob.
+
+### Reasons for This Approach
+
+- **Testing and Debugging**: Manually triggering a Job allows you to test and debug the job execution without waiting for the scheduled time. This is particularly useful during development and troubleshooting.
+- **Control and Flexibility**: You have control over when the job runs, which is useful for operations that need to be performed immediately or on an ad-hoc basis.
+- **Isolation**: Running a Job manually from the CronJob template ensures that the execution environment is the same as it would be during scheduled runs, maintaining consistency.
+
+By following these steps, you can manually trigger a Kubernetes CronJob whenever needed, providing flexibility in managing scheduled tasks.",Y,"I've created a Kubernetes Scheduled Job, which runs twice a day according to its schedule. However, I would like to trigger it manually for testing purposes. How can I do this?"
+37,"the ~/.kube/config wasn't updated with the changes.
+i ran:
+mkdir -p $home/.kube
+sudo cp -i /etc/kubernetes/admin.conf $home/.kube/config
+sudo chown $(id -u):$(id -g) $home/.kube/config  
+
+and it fixed it.","The error message ""you must be logged in to the server (unauthorized)"" typically indicates an issue with the authentication credentials in your kubeconfig file, especially after renewing certificates. 
+
+### Step-by-Step Analysis and Fix:
+
+1. **Localization**: The issue is likely related to the kubeconfig file, specifically the client certificate and key used for authentication.
+
+2. **Reasoning**: After renewing the certificates, the kubeconfig file may still reference the old client certificate or key, which has expired. This can lead to the unauthorized error when trying to access the Kubernetes API.
+
+3. **Remediation**: You need to ensure that the kubeconfig file is updated with the new client certificate and key. Here’s how to do that:
+
+   - First, check the current kubeconfig file:
+     ```bash
+     cat $HOME/.kube/config
+     ```
+
+   - If the `client-certificate-data` and `client-key-data` fields are still pointing to the old certificates, you need to update them. You can regenerate the kubeconfig file using the renewed certificates.
+
+   - To overwrite the existing kubeconfig for the ""admin"" user, run the following commands:
+     ```bash
+     mv $HOME/.kube $HOME/.kube.bak
+     mkdir $HOME/.kube
+     sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+     sudo chown $(id -u):$(id -g) $HOME/.kube/config
+     ```
+
+4. **Verification**: After updating the kubeconfig file, verify that you can now access the Kubernetes API:
+   ```bash
+   kubectl get pods
+   ```
+
+### Summary:
+The unauthorized error is likely due to the kubeconfig file still referencing expired certificates. By regenerating the kubeconfig file with the updated certificates, you should be able to resolve the issue. 
+
+If you continue to face issues, ensure that the `client-certificate-data` and `client-key-data` in the kubeconfig file are correctly set to the new certificates.",Y,"my certificates were expired:
+root@ubuntu:~# kubectl get pods
+unable to connect to the server: x509: certificate has expired or is not yet valid                                                                                                                                                           
+
+i verified it by running:
+root@ubuntu:~# kubeadm alpha certs check-expiration
+[check-expiration] reading configuration from the cluster...
+[check-expiration] fyi: you can look at this config file with 'kubectl -n kube-system get cm kubeadm-config -oyaml'
+[check-expiration] error reading configuration from the cluster. falling back to default configuration
+
+w0330 09:18:49.875780   12562 configset.go:202] warning: kubeadm cannot validate component configs for api groups [kubelet.config.k8s.io kubepro                                                                                             xy.config.k8s.io]
+certificate                expires                  residual time   certificate authority   externally managed
+admin.conf                 mar 29, 2021 09:27 utc   &lt;invalid&gt;                               no
+apiserver                  mar 29, 2021 09:27 utc   &lt;invalid&gt;       ca                      no
+apiserver-etcd-client      mar 29, 2021 09:27 utc   &lt;invalid&gt;       etcd-ca                 no
+apiserver-kubelet-client   mar 29, 2021 09:27 utc   &lt;invalid&gt;       ca                      no
+controller-manager.conf    mar 29, 2021 09:27 utc   &lt;invalid&gt;                               no
+etcd-healthcheck-client    mar 29, 2021 09:27 utc   &lt;invalid&gt;       etcd-ca                 no
+etcd-peer                  mar 29, 2021 09:27 utc   &lt;invalid&gt;       etcd-ca                 no
+etcd-server                mar 29, 2021 09:27 utc   &lt;invalid&gt;       etcd-ca                 no
+front-proxy-client         mar 29, 2021 09:27 utc   &lt;invalid&gt;       front-proxy-ca          no
+scheduler.conf             mar 29, 2021 09:27 utc   &lt;invalid&gt;                               no
+
+certificate authority   expires                  residual time   externally managed
+ca                      mar 27, 2030 09:27 utc   8y              no
+etcd-ca                 mar 27, 2030 09:27 utc   8y              no
+front-proxy-ca          mar 27, 2030 09:27 utc   8y              no
+
+i renew the certificates by running: kubeadm alpha certs renew all.
+w0330 09:20:21.951839   13124 configset.go:202] warning: kubeadm cannot validate component configs for api groups [kubelet.config.k8s.io kubeproxy.config.k8s.io]
+certificate embedded in the kubeconfig file for the admin to use and for kubeadm itself renewed
+certificate for serving the kubernetes api renewed
+certificate the apiserver uses to access etcd renewed
+certificate for the api server to connect to kubelet renewed
+certificate embedded in the kubeconfig file for the controller manager to use renewed
+certificate for liveness probes to healthcheck etcd renewed
+certificate for etcd nodes to communicate with each other renewed
+certificate for serving etcd renewed
+certificate for the front proxy client renewed
+certificate embedded in the kubeconfig file for the scheduler manager to use renewed
+
+all the certificates are now updated to 2022 so it should be okay:
+certificate                expires                  residual time   certificate authority   externally managed
+admin.conf                 mar 30, 2022 09:20 utc   364d                                    no
+apiserver                  mar 30, 2022 09:20 utc   364d            ca                      no
+apiserver-etcd-client      mar 30, 2022 09:20 utc   364d            etcd-ca                 no
+apiserver-kubelet-client   mar 30, 2022 09:20 utc   364d            ca                      no
+controller-manager.conf    mar 30, 2022 09:20 utc   364d                                    no
+etcd-healthcheck-client    mar 30, 2022 09:20 utc   364d            etcd-ca                 no
+etcd-peer                  mar 30, 2022 09:20 utc   364d            etcd-ca                 no
+etcd-server                mar 30, 2022 09:20 utc   364d            etcd-ca                 no
+front-proxy-client         mar 30, 2022 09:20 utc   364d            front-proxy-ca          no
+scheduler.conf             mar 30, 2022 09:20 utc   364d                                    no
+
+certificate authority   expires                  residual time   externally managed
+ca                      mar 27, 2030 09:27 utc   8y              no
+etcd-ca                 mar 27, 2030 09:27 utc   8y              no
+front-proxy-ca          mar 27, 2030 09:27 utc   8y              no
+
+but when i run kubectl get pods i received the error:
+error: you must be logged in to the server (unauthorized)
+
+it should be a problem with the certificate i think, but i am not sure how to fix it. should i create new certificate and replace the one that inside the config file?"
+38,"users and clusters are tied to a context and you can change users and clusters by changing the context.
+
+kubectl config use-context my-context-name
+
+
+above command sets the current context to my-context-name.now when kubectl is used the user and cluster tied to my-context-name context will be used.
+
+check the docs for more details and various other available options.","""To switch to your company's account in `kubectl`, you can use the following command:
+
+```bash
+kubectl config use-context <your-company-context>
+```
+
+### Steps to Identify the Context:
+1. **List Available Contexts**: First, check the available contexts in your kubeconfig file by running:
+   ```bash
+   kubectl config get-contexts
+   ```
+   This will display a list of contexts, including your company's context and your personal context.
+
+2. **Switch Context**: Once you identify the correct context for your company's account, use the `kubectl config use-context` command as shown above, replacing `<your-company-context>` with the actual name of your company's context.
+
+### Verification:
+After switching contexts, you can verify that you are using the correct context by running:
+```bash
+kubectl config current-context
+```
+This should return the context name for your company's account.
+
+### Common Mistakes:
+- Ensure that the context name is spelled correctly.
+- If you encounter permission issues, verify that your company's credentials are correctly configured in the kubeconfig file.
+
+By following these steps, you should be able to successfully switch to your company's account in `kubectl`.""",Y,"in my machine i have two kubectl users, my company's account and my personal account. i can confirm that by running kubectl config view.
+
+i'm trying to access my company's cluster but kubectl is using to my personal credentials to authenticate. which is causing an error, as expected.
+
+how do i change to my company's account?
+"
+39,"here is a client-side approach, building up on @jpdugo17's answer and @tjgorrie's initial example, using the statesave option to maintain the table state on re-rendering. selectpage and updatesearch can be used along with datatableproxy - the state of input$table_state$order needs to be passed as an option:
+library(shiny)
+library(dt)
+data(iris)
+
+iris$new_col &lt;- ''
+
+server &lt;- function(input, output, session) {
+  
+  df = reactivevalues(iris = iris)
+  
+  output$table &lt;- dt::renderdatatable(expr = {
+    if (is.null(isolate(input$table_state))) {
+      dt::datatable(
+        df$iris,
+        selection = 'single',
+        callback = js(&quot;$.fn.datatable.ext.errmode = 'none';&quot;),
+        options = list(statesave = true)
+      )
+    } else {
+      # print(isolate(input$table_state$order))
+      dt::datatable(
+        df$iris,
+        selection = 'single',
+        callback = js(&quot;$.fn.datatable.ext.errmode = 'none';&quot;),
+        options = list(
+          statesave = true,
+          order = isolate(input$table_state$order),
+          paging = true,
+          pagelength = isolate(input$table_state$length)
+        )
+      )
+    }
+  }, server = false)
+  
+  proxy &lt;- datatableproxy('table')
+  
+  observeevent(input$button, {
+    df$iris[input$table_rows_selected, c('new_col')] &lt;- 'changed!'
+  })
+
+  observeevent(df$iris, {
+    updatesearch(proxy, keywords = list(global = input$table_state$search$search, columns = null)) # see input$table_state$columns if needed
+    selectpage(proxy, page = input$table_state$start/input$table_state$length+1)
+  }, ignoreinit = true, priority = -1)
+}
+
+ui &lt;- fluidpage(
+  actionbutton('button', 'press me'),
+  dt::dtoutput('table') 
+)
+
+shinyapp(ui, server)
+
+here is a related article.
+","**Issue Summary:** The user is experiencing issues with a Shiny application deployed on Kubernetes, specifically when using `dt::renderDataTable(..., server = FALSE)`. The application works correctly with a single replica but fails to update the data correctly when scaled to multiple replicas. The user suspects that session stickiness is not maintained, leading to data inconsistency.
+
+**Root Cause Analysis:**
+1. **Session Stickiness:** When using multiple replicas, if session stickiness is not configured, requests from the same user may be routed to different replicas, causing inconsistencies in the data displayed.
+2. **Client-Side Processing:** With `server = FALSE`, the data is processed on the client side, which can lead to issues when the underlying data changes, as the client does not automatically refresh the data from the server.
+3. **Data Proxying:** The use of `datatableProxy` and `replaceData` may not work as expected when the data is not synchronized across replicas.
+
+**Step-by-Step Fix:**
+1. **Enable Session Stickiness:** Modify the Kubernetes service to ensure that sessions are sticky. This can be done by adding annotations to the service for the load balancer to maintain session affinity.
+
+Here’s the updated YAML configuration for the service:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-appname
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: ""3600"" # Example for AWS
+    service.beta.kubernetes.io/aws-load-balancer-type: ""nlb"" # Example for AWS NLB
+spec:
+  ports:
+  - name: http
+    port: 3838
+    protocol: TCP
+    targetPort: 3838
+  selector:
+    app: appname
+  type: LoadBalancer
+  sessionAffinity: ClientIP # Enable session stickiness
+```
+
+**Verification:**
+- Ensure that the YAML is syntactically correct and follows Kubernetes best practices.
+- The `sessionAffinity: ClientIP` setting will help maintain session stickiness, ensuring that requests from the same user are routed to the same pod.
+
+**References:**
+- [Kubernetes Service Documentation](https://kubernetes.io/docs/concepts/services-networking/service/)
+- [Session Affinity in Kubernetes](https://kubernetes.io/docs/concepts/services-networking/service/#session-affinity)
+
+**Common Mistakes & Best Practices:**
+- Always verify that your load balancer supports session stickiness and configure it accordingly.
+- Test the application with multiple users to ensure that the data updates correctly across replicas.
+- Monitor the application logs for any errors related to data fetching or session management.",N,"for various reasons i want to be able to use a proxied data table and replacedata while client side processing is being used i.e. dt::renderdatatable(..., server = false).
+context
+i have a shiny application/dashboard that communicates to a database and presents information to a user. the user is able to fill out a form in the application which will be added to the database and then the shiny app updates the data by making a query to the database to fetch the new information.
+the application is currently being deployed via kubernetes using a loadbalancer with the intention to use multiple replicas to scale up the application as needed. the application is not being run through shinyproxy.
+caveats
+currently, when the application is being run by a single replica (process) the application will behave perfectly fine and is able to use server=true. however when i increase the number of processes/replicas to run, the data is not able to be presented to users unless server=false is specified in renderdatatable. for a currently unknown reason but i suspect it might be due to the sessions not being sticky to ips
+while the code is able to function fine when server = true if i want to allow multiple users to application they all cannot share a single process as the application will become very slow once multiple connections are made. as a result i likely need to use server=false so each user is able to see the data at the cost of a very important functional detail (replacedata stops working). the product owner of the application is insistent that this behaviour remains intact as the data present is often large and requires some column sorting and paging to find a piece of information you want to look at. and when submitting a form, if i do not use replacedata and reconstruct the table from scratch the users previous table state is lost.
+so while i could tear down the datatable and regenerate it within an observeevent
+observeevent(input$button, {
+    ...
+    output$table = renderdatatable({dt::datatable(df(), selection = 'single', callback = 
+    js(&quot;$.fn.datatable.ext.errmode = 'none';&quot;))}, server = false)
+    ...
+})
+
+this would provide a solution that would yield unfavourable behaviour even though it will update the table accordingly.
+repoducible example
+this will create an application with a button and a table. select a row on the table and then click the button. the expected behaviour would be that the table updates with 'new_content' on the row that is selected. this will only work when server=true, nothing will happen when server=false.
+library(shiny)
+library(dt)
+data(iris)
+
+server &lt;- function(input, output, session) {
+  iris$new_col = ''
+  df = reactive({iris})
+  output$table = renderdatatable({
+      dt::datatable(df(), selection = 'single', 
+        callback = js(&quot;$.fn.datatable.ext.errmode = 'none';&quot;))}, server = false) # when true code works fine,,,
+  proxy = datatableproxy('table')
+
+  observeevent(input$button, {
+    # this line would be replacing the write to a db
+    iris[input$table_rows_selected, 'new_col'] &lt;- 'changed'
+    # this line would be replacing the query to the db to reflect changes the user (and potentially other users have made between loading the data previously.
+    df &lt;- reactive({iris})
+    proxy %&gt;% replacedata(df(), rownames = true, resetpaging = false)
+  })
+}
+    
+ui &lt;- fluidpage(
+  actionbutton('button', 'press me'),
+  dt::dtoutput('table') 
+)
+
+shinyapp(ui, server)
+
+i have done a fairly extensive search on so and this was the closest question i could find: dt editing in shiny application with client-side processing (server = f) throws json error however this isn't actually answered and provides an answer of &quot;it just does not work&quot;.
+kubernetes.yaml (only look if you are a wizard)
+i am including the yaml file incase there are some kubernetes boffins that know how to specifically solve the above issue with some clever trickery. the described problem might stem from sessions being swapped between replicas thus the data gets miscommunicated but i am honestly not the best at kubernetes... if that is the case and i would then be able to use server=true within the shiny application then this would also solve the problem.
+apiversion: apps/v1
+kind: deployment
+metadata:
+  name: deployment-appname
+spec:
+  replicas: 5
+  selector:
+    matchlabels:
+      app: appname
+  template:
+    metadata:
+      labels:
+        app: appname
+    spec:
+      containers:
+      - name: appname 
+        securitycontext:
+            privileged: false
+        image: appname:latest
+        ports: 
+        - name: http
+          containerport: 3838
+---
+apiversion: v1
+kind: service
+metadata:
+  name: servive-appname
+spec:
+  ports:
+  - name: http
+    port: 3838
+    protocol: tcp
+    targetport: 3838
+  selector:
+    app: appname
+  type: loadbalancer
+---
+apiversion: networking.k8s.io/v1beta1
+kind: ingress
+metadata:
+  name: ingress-appname
+  annotations:
+    nginx.org/websocket-services: &quot;service-appname&quot;
+spec:
+  tls:
+  - hosts:
+    - appname.url.com
+  rules:
+  - host: appname.url.com
+    http:
+      paths:
+      - path: /
+        backend:
+          servicename: service-appname
+          serviceport: 3838
+
+"
+40,"i was running helm version 2.8.2 when obtaining this error, upgrading to v2.9.1 fixed this!
+","**Issue Summary:**
+The user is encountering an error when trying to run `helm init` on an AWS EKS cluster, specifically related to permissions and creating deployments in the `kube-system` namespace.
+
+**Root Cause Analysis:**
+1. The error message indicates that the user ""system:anonymous"" does not have the necessary permissions to create deployments in the `kube-system` namespace.
+2. This issue is likely related to the RBAC (Role-Based Access Control) configuration in the Kubernetes cluster, where the service account `tiller` does not have the required permissions.
+
+**Step-by-Step Solution:**
+1. Check the RBAC configuration for the `tiller` service account in the `kube-system` namespace.
+2. Ensure that the service account has the appropriate roles and role bindings to create deployments.
+3. Grant the necessary permissions to the `tiller` service account to create deployments in the `kube-system` namespace.
+
+Here's a step-by-step guide to resolve the issue:
+1. Check the RBAC configuration for the `tiller` service account in the `kube-system` namespace:
+   ```
+   kubectl get serviceaccount tiller -n kube-system -o yaml
+   ```
+2. Verify the roles and role bindings associated with the `tiller` service account:
+   ```
+   kubectl get rolebindings,roles --all-namespaces | grep tiller
+   ```
+3. If the `tiller` service account does not have the necessary permissions, create a ClusterRoleBinding to grant the required permissions:
+   ```
+   kubectl create clusterrolebinding tiller-cluster-admin --clusterrole=cluster-admin --serviceaccount=kube-system:tiller
+   ```
+4. Re-run the `helm init` command with the `--service-account tiller --upgrade` flags:
+   ```
+   helm init --service-account tiller --upgrade
+   ```
+
+**Verification:**
+After following the steps above, re-run the `helm init` command. If the RBAC configuration and permissions are correctly set up, the command should run without any errors.
+
+**References:**
+- Kubernetes RBAC: https://kubernetes.io/docs/reference/access-authn-authz/rbac/
+- Helm RBAC Configuration: https://helm.sh/docs/rbac/
+
+**Common Mistakes & Best Practices:**
+- Ensure that the service account used by Helm (`tiller` in this case) has the necessary permissions to perform the required actions.
+- Avoid hardcoding tokens and instead rely on proper RBAC configurations for security and best practices.",N,"having my cluster up and running on aws eks, i'm finding trouble running helm init with the following error:
+
+$ helm init --service-account tiller --upgrade
+error: error installing: deployments.extensions is forbidden: user ""system:anonymous"" cannot create deployments.extensions in the namespace ""kube-system""
+
+
+kubectl works properly (object retrieval, creation and cluster administration), authenticating and authorizing correctly by running heptio-authenticator-aws at connection time ( with an exec section in the kubectl config).
+
+in order to prepare the cluster for helm, i created the service account and role binding as specified in the helm docs.
+
+i've heard of people having helm running on eks, and i'm guessing they're skipping the exec section of the kubectl config by hardcoding the token... i'd like to avoid that!
+
+any ideas on how to fix this? my guess is that it is related to helm not being able to execute heptio-authenticator-aws properly"
+41,"this is a community wiki answer. feel free to expand it.
+unfortunately, as you already found out, this addon is not supported with with vm-driver=none.
+if you use the none driver, some kubernetes components run as privileged containers that have side effects outside of the minikube environment. those side effects mean that the none driver is not recommended for personal workstations.
+also, according to the official docs:
+
+most users of this driver should consider the newer docker
+driver, as it is significantly easier to configure and does not
+require root access. the ‘none’ driver is recommended for advanced
+users only.
+
+so basically you have two options here:
+
+downgrade to minikube v1.11 (not recommended)
+
+use a supported driver (strongly recommended)
+
+
+remember that these changes are made for a reason and going against them is usually a bad idea. it would be better to follow the official recommendation.
+","**Issue Summary:**
+The user is facing an issue with enabling the Ingress addon on Minikube with the ""driver=none"" option due to networking limitations, as indicated by the error message received.
+
+**Root Cause Analysis (CoT Reasoning):**
+1. The ""driver=none"" option in Minikube uses the host network for the Kubernetes cluster, which can lead to networking limitations.
+2. Ingress relies on networking components like LoadBalancer services or NodePorts, which may not function properly in the ""driver=none"" mode.
+3. The error message specifically mentions that Ingress addon is not supported due to networking limitations of the ""none"" driver.
+
+**Step-by-Step Solution:**
+1. Since the ""driver=none"" option in Minikube restricts the use of Ingress due to networking limitations, an alternative approach is needed.
+2. One possible solution is to use a different driver that supports Ingress, such as VirtualBox or KVM.
+3. To switch the Minikube driver, you can run the following command:
+   ```
+   minikube config set driver <driver_name>
+   minikube delete
+   minikube start
+   ```
+4. After switching to a supported driver, you should be able to enable the Ingress addon without encountering the networking limitations.
+
+**Verification:**
+After switching to a different driver that supports Ingress, try enabling the Ingress addon again using the command:
+```
+minikube addons enable ingress
+```
+If the Ingress addon is successfully enabled without any errors, the issue is resolved.
+
+**References:**
+- Minikube Documentation: https://minikube.sigs.k8s.io/docs/
+- Kubernetes Ingress Documentation: https://kubernetes.io/docs/concepts/services-networking/ingress/
+
+**Common Mistakes & Best Practices:**
+- Avoid using the ""driver=none"" option in Minikube if you require features like Ingress that rely on networking components.
+- Always check the compatibility of Minikube drivers with the desired Kubernetes features before setting up the cluster.",Y,"i am using minikube on my laptop with &quot;driver=none&quot; option. when i try to enable ingress, i got the following error:
+$ minikube addons enable ingress
+
+❌  exiting due to mk_usage: due to networking limitations of driver none, ingress addon is not supported. try using a different driver.
+
+after some googling, i found that ingress addon stopped to work with 'none' vm driver starting from minikube v1.12.x, and i am using v1.13.1. (please refer to: https://github.com/kubernetes/minikube/issues/9322)
+i wonder whether there are other ways to install &quot;native&quot; ingress on minikube with the &quot;driver=none&quot; option?
+"
+42,"for the helm value, the template uses a loop that places the airflow.config map into double quotes "". this means any "" in a value needs to be escaped for the output templated yaml to be valid.
+
+airflow:
+  config:
+    airflow__kubernetes__kube_client_request_args: '{\""_request_timeout\"":60}'
+
+
+that deploys and runs (but i haven't completed an end to end test)
+
+according to this github issue, the python scheduler ssl timeout may not be a problem as the watcher starts again after the 60 second connection timeout.
+","Based on the error messages you provided, it seems like there are issues with the configuration of the Kubernetes executor in your Airflow setup. Here are some steps you can take to troubleshoot and potentially resolve the problem:
+
+1. **JSON Format Issue**: The error message `expecting property name enclosed in double quotes` suggests that there might be an issue with the format of the `kube_client_request_args` configuration. Make sure that the JSON format is correct and all property names are enclosed in double quotes. 
+
+2. **Environment Variable Configuration**: Since setting the configuration directly in the `values.yaml` file didn't work, you can try setting the `kube_client_request_args` as an environment variable in your Dockerfile. Ensure that the format is correct and the environment variable is properly passed to the Airflow scheduler pod.
+
+3. **SSL Error**: The `wantreaderror` related to SSL in the scheduler pod could be due to network connectivity issues or SSL configuration problems. Check if there are any network restrictions or firewall rules blocking the communication between the Airflow scheduler pod and the Kubernetes API server.
+
+4. **Debugging**: Enable verbose logging in the Airflow scheduler pod to get more detailed information about the errors. This can help in pinpointing the exact cause of the issues.
+
+5. **Update Dependencies**: Make sure that all dependencies, including the Airflow version, Kubernetes version, and any related libraries, are up to date. Sometimes, compatibility issues can cause unexpected errors.
+
+6. **Community Support**: Reach out to the Airflow community forums or GitHub repository for additional support. Other users might have faced similar issues and could provide insights or solutions.
+
+By following these steps and carefully analyzing the error messages, you should be able to troubleshoot and resolve the issues with the Airflow scheduler failing to start with the Kubernetes executor.",N,"i am using using  https://github.com/helm/charts/tree/master/stable/airflow helm chart and building  v1.10.8 puckle/docker-airflow image with kubernetes installed on it and using that image in the helm chart,
+but i keep getting
+
+  file ""/usr/local/bin/airflow"", line 37, in &lt;module&gt;
+    args.func(args)
+  file ""/usr/local/lib/python3.7/site-packages/airflow/bin/cli.py"", line 1140, in initdb
+    db.initdb(settings.rbac)
+  file ""/usr/local/lib/python3.7/site-packages/airflow/utils/db.py"", line 332, in initdb
+    dagbag = models.dagbag()
+  file ""/usr/local/lib/python3.7/site-packages/airflow/models/dagbag.py"", line 95, in __init__
+    executor = get_default_executor()
+  file ""/usr/local/lib/python3.7/site-packages/airflow/executors/__init__.py"", line 48, in get_default_executor
+    default_executor = _get_executor(executor_name)
+  file ""/usr/local/lib/python3.7/site-packages/airflow/executors/__init__.py"", line 87, in _get_executor
+    return kubernetesexecutor()
+  file ""/usr/local/lib/python3.7/site-packages/airflow/contrib/executors/kubernetes_executor.py"", line 702, in __init__
+    self.kube_config = kubeconfig()
+  file ""/usr/local/lib/python3.7/site-packages/airflow/contrib/executors/kubernetes_executor.py"", line 283, in __init__
+    self.kube_client_request_args = json.loads(kube_client_request_args)
+  file ""/usr/local/lib/python3.7/json/__init__.py"", line 348, in loads
+    return _default_decoder.decode(s)
+  file ""/usr/local/lib/python3.7/json/decoder.py"", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  file ""/usr/local/lib/python3.7/json/decoder.py"", line 353, in raw_decode
+    obj, end = self.scan_once(s, idx)
+json.decoder.jsondecodeerror: expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+
+
+in my scheduler,  also as various sources advise,
+i tried setting :
+
+airflow__kubernetes__kube_client_request_args: {""_request_timeout"" : [60,60] }
+
+in my helm values. that also didn't work any one have any ideas what am i missing?
+
+here's my values.yaml
+
+
+airflow:
+  image:
+     repository: airflow-docker-local
+     tag: 1.10.8
+  executor: kubernetes
+  service:
+    type: loadbalancer
+  config:
+    airflow__kubernetes__worker_container_repository: airflow-docker-local
+    airflow__kubernetes__worker_container_tag: 1.10.8
+    airflow__kubernetes__worker_container_image_pull_policy: never
+
+    airflow__kubernetes__worker_service_account_name: airflow
+    airflow__kubernetes__dags_volume_claim: airflow
+    airflow__kubernetes__namespace: airflow
+    airflow__kubernetes__kube_client_request_args: {""_request_timeout"" : [60,60] }
+
+    airflow__core__sql_alchemy_conn: postgresql+psycopg2://postgres:airflow@airflow-postgresql:5432/airflow
+
+persistence:
+  enabled: true
+  existingclaim: ''
+
+workers:
+  enabled: false
+
+postgresql:
+  enabled: true
+
+redis:
+  enabled: false
+
+
+edit : 
+
+various attempts to set environment variable in helm values.yaml didn't work, after that i added (pay attention to double and single quotes)
+
+env airflow__kubernetes__kube_client_request_args='{""_request_timeout"" : [60,60] }'
+
+
+to dockerfile here : https://github.com/puckel/docker-airflow/blob/1.10.9/dockerfile#l19
+after that my airflow-scheduler pod starts but then i keep getting following error on my scheduler pod.
+
+process kubernetesjobwatcher-9: traceback (most recent call last): 
+    file ""/usr/local/lib/python3.7/site-packages/urllib3/contrib/pyopenssl.py"", line 313, 
+    in recv_into return self.connection.recv_into(*args, **kwargs) file ""/usr/local/lib/python3.7/site-packages/openssl/ssl.py"", 
+    line 1840, in recv_into self._raise_ssl_error(self._ssl, result) file ""/usr/local/lib/python3.7/site-packages/openssl/ssl.py"", 
+    line 1646, in _raise_ssl_error raise wantreaderror() openssl.ssl.wantreaderror
+
+"
+43,"eventually i've used configmap and secrets to mount files instead of pv and works as expected.
+
+apiversion: apps/v1
+kind: deployment
+metadata:
+  labels:
+    app: rabbit-mq
+  name: rabbit-mq
+spec:
+  replicas: 1
+  selector:
+    matchlabels:
+      app: rabbit-mq
+  template:
+    metadata:
+      labels:
+         app: rabbit-mq
+    spec:
+      containers:
+      - image: rabbitmq:3.6.16-management
+        name: rabbit-mq
+        ports:
+        - containerport: 15671
+        - containerport: 5671
+        volumemounts:
+        - name: rabbit-mq-data
+          mountpath: /etc/rabbitmq
+          readonly: false
+        - name: mq-secret
+          mountpath: /etc/rabbitmq/certfiles
+          #readonly: true
+      volumes:
+        - name: mq-secret
+          secret:
+            defaultmode: 420
+            secretname: rabbit-mq-secrets
+        - configmap:
+            defaultmode: 420
+            items:
+            - key: rabbitmq.config
+              path: rabbitmq.config
+            name: mq-config
+          name: rabbit-mq-data
+
+","**Issue Summary:**
+The user is facing a permission denied error when deploying RabbitMQ 3.6.16-management on Kubernetes, while it works fine in a Docker Compose deployment.
+
+**Root Cause Analysis (CoT Reasoning):**
+1. The error message ""/usr/local/bin/docker-entrypoint.sh: line 382: /etc/rabbitmq/rabbitmq.config: permission denied"" indicates a permission issue with the RabbitMQ configuration file.
+2. In the Kubernetes deployment, the volume mount for RabbitMQ configuration at ""/etc/rabbitmq"" might be causing the permission denied error.
+3. The hostPath volume in the PersistentVolume (PV) definition might not have the correct permissions set for RabbitMQ to access the configuration file.
+
+**Step-by-Step Solution:**
+1. Update the PersistentVolume (PV) definition to ensure correct permissions for RabbitMQ to access the configuration file.
+2. Modify the PV definition to set appropriate permissions for the hostPath volume.
+3. Apply the changes and redeploy the RabbitMQ deployment in Kubernetes.
+
+**Verification:**
+Verify that the RabbitMQ deployment in Kubernetes no longer throws the permission denied error and functions correctly.
+
+**References:**
+- Kubernetes Persistent Volumes: https://kubernetes.io/docs/concepts/storage/persistent-volumes/
+- Kubernetes Volume Permissions: https://kubernetes.io/docs/concepts/storage/volumes/#hostpath
+
+**Common Mistakes & Best Practices:**
+- Ensure that the permissions on hostPath volumes in PersistentVolumes are set correctly for applications to access files.
+- Double-check volume mounts and paths in Kubernetes deployments to avoid permission issues.",N,"i'm in a progress to migrate to kuberenetes from docker-compose.
+one of the services we're using is rabbit-mq.
+when i try to deploy rabbit-mq 3.6.16-management i receive the error:
+
+/usr/local/bin/docker-entrypoint.sh: line 382: /etc/rabbitmq/rabbitmq.config: permission denied.
+
+while it works in docker-compose deployment.
+
+kuberentes:
+
+apiversion: apps/v1
+kind: deployment
+metadata:
+  labels:
+    app: rabbit-mq
+  name: rabbit-mq
+spec:
+  replicas: 1
+  selector:
+    matchlabels:
+      app: rabbit-mq
+  strategy:
+    type: recreate
+  template:
+    metadata:
+      labels:
+         app: rabbit-mq
+    spec:
+      containers:
+      - image: rabbitmq:3.6.16-management
+        name: rabbit-mq
+        ports:
+        - containerport: 15671
+        - containerport: 5671
+        volumemounts:
+        - mountpath: /etc/rabbitmq
+          name: rabbit-mq-data
+      restartpolicy: always
+      hostname: rabbit-mq
+      volumes:
+      - name: rabbit-mq-data
+        persistentvolumeclaim:
+          claimname: rabbit-mq-data
+
+
+pvc:
+
+apiversion: v1
+kind: persistentvolumeclaim
+metadata:
+  labels:
+    app: rabbit-mq-data
+  name: rabbit-mq-data
+spec:
+  accessmodes:
+  - readwriteonce
+  resources:
+    requests:
+      storage: 16gi
+
+
+pv:
+
+apiversion: v1
+kind: persistentvolume
+metadata:
+  name: rabbit-mq-data
+  labels:
+    type: local
+spec:
+  accessmodes:
+  - readwriteonce
+  capacity:
+    storage: 16gi
+  hostpath:
+    path: ""/etc/rabbitmq""
+
+
+docker-compose:
+
+  rabbit-mq:
+      image: rabbitmq:3.6.16-management
+      ports:
+        - ""15671:15671""
+        - ""5671:5671""
+      container_name: rabbit-mq
+      volumes:
+        - rabbit-mq-data:/etc/rabbitmq
+      restart: on-failure:5
+
+"
+44,"option #1 - try removing aws-reserved/sso.amazonaws.com/$region/ from the role_arn
+option #2 - use aws-iam-authenticator, the official docs provide a thorough example of how to use sso and kubectl (kubeconfig)
+","**Issue Summary:**
+The user is unable to perform any kubectl operations on an AWS EKS cluster despite being able to log in to AWS CLI and GUI. The error message indicates unauthorized access.
+
+**Root Cause Analysis:**
+1. The user is able to obtain an EKS token using `aws eks get-token`, which suggests that the AWS SSO authentication is working correctly.
+2. The `kubeconfig` file is correctly configured with the EKS cluster details and the role ARN for authentication.
+3. The `aws-auth` ConfigMap in the EKS cluster is properly configured to map roles to users/groups.
+4. The user `team-sso-devops` has been granted the `cluster-admin` role in the `clusterrolebinding`.
+
+**Step-by-Step Solution:**
+1. Verify the IAM role permissions:
+   - Ensure that the IAM role associated with `team-sso-devops` has the necessary permissions to interact with the EKS cluster.
+   - Check if the IAM policies attached to the role allow the required actions.
+
+2. Check RBAC configuration:
+   - Verify that the `clusterrolebinding` for `team:sso:devops` is correctly referencing the `cluster-admin` role.
+   - Confirm that the `team-sso-devops` user is correctly mapped to the IAM role in the `aws-auth` ConfigMap.
+
+3. Validate Kubernetes RBAC settings:
+   - Check if there are any conflicting or overriding RBAC rules that might be restricting access for the user.
+   - Ensure that the RBAC rules are correctly applied at the cluster level.
+
+4. Test kubectl access:
+   - Try accessing the EKS cluster using `kubectl` with the `team-sso-devops` user to see if the issue persists.
+   - Use `kubectl auth can-i` command to check if the user has the necessary permissions for the desired actions.
+
+5. Troubleshoot EKS token:
+   - Revoke the existing EKS token and generate a new one using `aws eks get-token` to ensure the token is not expired or invalid.
+   - Update the `kubeconfig` file with the new token if needed.
+
+**Verification:**
+1. Attempt to perform kubectl operations using the `team-sso-devops` user after following the above steps.
+2. Check for any error messages or unauthorized access responses.
+3. Verify that the user can successfully interact with the EKS cluster without any authentication issues.",N,"i have created a fresh aws sso (used internal idp as identity source, so no use of active directory). 
+i am able to login to aws cli, aws gui, but unable to perform any kubectl ops.
+error: you must be logged in to the server (unauthorized)
+
+this has something to do with the rbac i think as i am able to get eks token via
+aws eks get-token.
+➜ cat ~/.aws/config
+
+[profile team-sso-admin]
+sso_start_url=https://team.awsapps.com/start
+sso_region=us-west-2
+sso_account_id=1111111111
+sso_role_name=administratoraccess
+region=us-west-2
+credential_process = aws-vault exec team-sso-admin --json
+
+
+➜ aws-vault exec team-sso-admin --debug -- zsh --login
+➜ env | grep aws
+aws_vault_prompt=pass
+aws_vault_backend=pass
+aws_vault=team-sso-admin
+aws_default_region=us-west-2
+aws_region=us-west-2
+aws_access_key_id=xxx
+aws_secret_access_key=xxx
+aws_session_token=xxx
+aws_security_token=yyy
+aws_session_expiration=2021-01-11t05:55:51z
+aws_sdk_load_config=1
+
+➜ aws sts get-caller-identity --output yaml 
+
+account: '111111111111'
+arn: arn:aws:sts::111111111111:assumed-role/awsreservedsso_administratoraccess_6c71da2aa3076dfb/testuser
+userid: xxx:testuser
+
+➜ aws eks get-token --cluster-name team-shared-eks --role arn:aws:iam::111111111111:role/aws-reserved/sso.amazonaws.com/us-west-2/awsreservedsso_administratoraccess_67d1da2aa3076dfb
+
+{&quot;kind&quot;: &quot;execcredential&quot;, &quot;apiversion&quot;: &quot;client.authentication.k8s.io/v1alpha1&quot;, &quot;spec&quot;: {}, &quot;status&quot;: {&quot;expirationtimestamp&quot;: &quot;2021-01-11t02:49:11z&quot;, &quot;token&quot;: &quot;xxx&quot;}}
+
+
+kubeconfig
+config
+
+- name: arn:aws:eks:us-west-2:111111111111:cluster/team-shared-eks
+  user:
+    exec:
+      apiversion: client.authentication.k8s.io/v1alpha1
+      args:
+      - --region
+      - us-west-2
+      - eks
+      - get-token
+      - --cluster-name
+      - team-shared-eks
+      - --role
+      - arn:aws:iam::111111111111:role/aws-reserved/sso.amazonaws.com/us-west-2/awsreservedsso_administratoraccess_67d1da2aa3076dfb
+      command: aws
+
+aws-auth
+maproles: |
+    - &quot;groups&quot;:
+      - &quot;system:bootstrappers&quot;
+      - &quot;system:nodes&quot;
+      &quot;rolearn&quot;: &quot;arn:aws:iam::111111111111:role/team-shared-eks20210110051740674200000009&quot;
+      &quot;username&quot;: &quot;system:node:{{ec2privatednsname}}&quot;
+    - &quot;groups&quot;:
+      - &quot;system:master&quot;
+      &quot;rolearn&quot;: &quot;arn:aws:iam::111111111111:role/team-saml-devops&quot;
+      &quot;username&quot;: &quot;team-devops&quot;
+    - &quot;groups&quot;:
+      - &quot;system:master&quot;
+      &quot;rolearn&quot;: &quot;arn:aws:iam::111111111111:role/aws-reserved/sso.amazonaws.com/us-west-2/awsreservedsso_administratoraccess_67d1da2aa3076dfb&quot;
+      &quot;username&quot;: &quot;team-sso-devops&quot;
+
+
+clusterrole binding for team-sso-devops user:
+apiversion: rbac.authorization.k8s.io/v1
+kind: clusterrolebinding
+metadata:
+  creationtimestamp: &quot;2021-01-11t01:37:51z&quot;
+  name: team:sso:devops
+roleref:
+  apigroup: rbac.authorization.k8s.io
+  kind: clusterrole
+  name: cluster-admin
+subjects:
+- apigroup: rbac.authorization.k8s.io
+  kind: user
+  name: team-sso-devops
+  namespace: default
+
+"
+45,"so, if your gke project is project my-gke, and the project containing the services/things your gke containers need access to is project my-data, one approach is to:
+
+
+create a service account in the my-data project. give it whatever gcp roles/permissions are needed (ex. roles/bigquery.
+dataviewer if you have some bigquery tables that your my-gke gke containers need to read).
+
+
+create a service account key for that service account. when you do this in the console following https://cloud.google.com/iam/docs/creating-managing-service-account-keys, you should automatically download a .json file containing the sa credentials.
+
+create a kubernetes secret resource for those service account credentials. it might look something like this:
+
+apiversion: v1
+kind: secret
+metadata:
+  name: my-data-service-account-credentials
+type: opaque
+data:
+  sa_json: &lt;contents of running 'base64 the-downloaded-sa-credentials.json'&gt;
+
+mount the credentials in the container that needs access:
+
+[...]
+spec:
+  containers:
+  - name: my-container
+    volumemounts:
+    - name: service-account-credentials-volume
+      mountpath: /etc/gcp
+      readonly: true
+[...]
+  volumes:
+  - name: service-account-credentials-volume
+    secret:
+      secretname: my-data-service-account-credentials
+      items:
+      - key: sa_json
+        path: sa_credentials.json
+
+set the google_application_credentials environment variable in the container to point to the path of the mounted credentials:
+
+[...]
+spec:
+  containers:
+  - name: my-container
+    env:
+    - name: google_application_credentials
+      value: /etc/gcp/sa_credentials.json
+
+
+
+with that, any official gcp clients (ex. the gcp python client, gcp java client, gcloud cli, etc. should respect the google_application_credentials env var and, when making api requests, automatically use the credentials of the my-data service account that you created and mounted the credentials .json file for.
+","To set the `google_application_credentials` environment variable in your Kubernetes cron job, you can follow these steps:
+
+1. Update your cron job YAML file to include the `google_application_credentials` environment variable pointing to the service account JSON file path:
+
+```yaml
+- name: google_application_credentials
+  value: ""/etc/gcp/sa_credentials.json""
+```
+
+2. Make sure that your service account JSON file is stored in a Kubernetes secret and mounted as a volume in your pod spec. Based on the YAML snippet you provided, it seems like you already have this setup:
+
+```yaml
+volumes:
+- name: service-account-credentials-volume
+  secret:
+    secretname: my-data-service-account-credentials
+    items:
+    - key: sa_json
+      path: sa_credentials.json
+```
+
+3. Ensure that the volume mount path matches the path specified in the `google_application_credentials` environment variable:
+
+```yaml
+volumemounts:
+- name: service-account-credentials-volume
+  mountpath: ""/etc/gcp""
+  readonly: true
+```
+
+By following these steps, your Kubernetes cron job should be able to access the service account JSON file through the `google_application_credentials` environment variable. This will allow your GKE container to interact with resources in a different GCP project.",N,"with the help of kubernetes i am running daily jobs on gke, on a daily basis based on cron configured in kubernetes a new container spins up and try to insert some data into bigquery.
+
+the setup that we have is we have 2 different projects in gcp in one project we maintain the data in bigquery in other project we have all the gke running so when gke has to interact with different project resource my guess is i have to set an environment variable with name  google_application_credentials which points to a service account json file, but since every day kubernetes is spinning up a new container i am not sure how and where i should set this variable.
+
+thanks in advance!
+
+note: this file is parsed as a golang template by the drone-gke plugin.
+
+---
+apiversion: v1
+kind: secret
+metadata:
+  name: my-data-service-account-credentials
+type: opaque
+data:
+  sa_json: ""bas64jsonserviceaccount""
+---
+apiversion: v1
+kind: pod
+metadata:
+  name: adtech-ads-apidata-el-adunit-pod
+spec:
+  containers:
+  - name: adtech-ads-apidata-el-adunit-container
+    volumemounts:
+    - name: service-account-credentials-volume
+     mountpath: ""/etc/gcp""
+     readonly: true
+  volumes:
+  - name: service-account-credentials-volume
+    secret:
+      secretname: my-data-service-account-credentials
+      items:
+      - key: sa_json
+        path: sa_credentials.json
+
+
+
+
+this is our cron jobs for loading the adunit data
+
+apiversion: batch/v2alpha1
+kind: cronjob
+metadata:
+  name: adtech-ads-apidata-el-adunit
+spec:
+  schedule: ""*/5 * * * *""
+  suspend: false
+  concurrencypolicy: replace
+  successfuljobshistorylimit: 10
+  failedjobshistorylimit: 10
+  jobtemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: adtech-ads-apidata-el-adunit-container
+            image: {{.image}}
+            args:
+            - -cp
+            - opt/nyt/dfpdataingestion-1.0-jar-with-dependencies.jar
+            - com.nyt.cron.adunitjob
+            env:
+              - name: env_app_name
+                value: ""{{.env_app_name}}""
+              - name: env_app_context_name
+                value: ""{{.env_app_context_name}}""
+              - name: env_google_projectid
+                value: ""{{.env_google_projectid}}""
+              - name: env_google_datasetid
+                value: ""{{.env_google_datasetid}}""
+              - name: env_reporting_datasetid
+                value: ""{{.env_reporting_datasetid}}""
+              - name: env_adbridge_datasetid
+                value: ""{{.env_adbridge_datasetid}}""
+              - name: env_salesforce_datasetid
+                value: ""{{.env_salesforce_datasetid}}""
+              - name: env_cloud_platform_url
+                value: ""{{.env_cloud_platform_url}}""
+              - name: env_smtp_host
+                value: ""{{.env_smtp_host}}""
+              - name: env_to_email
+                value: ""{{.env_to_email}}""
+              - name: env_from_email
+                value: ""{{.env_from_email}}""
+              - name: env_aws_username
+                value: ""{{.env_aws_username}}""
+              - name: env_client_id
+                value: ""{{.env_client_id}}""
+              - name: env_refresh_token
+                value: ""{{.env_refresh_token}}""
+              - name: env_network_code
+                value: ""{{.env_network_code}}""
+              - name: env_application_name
+                value: ""{{.env_application_name}}""
+              - name: env_salesforce_username
+                value: ""{{.env_salesforce_username}}""
+              - name: env_salesforce_url
+                value: ""{{.env_salesforce_url}}""
+              - name: google_application_credentials
+                value: ""/etc/gcp/sa_credentials.json""
+              - name: env_cloud_sql_url
+                valuefrom:
+                  secretkeyref:
+                    name: secrets
+                    key: cloud_sql_url
+              - name: env_aws_password
+                valuefrom:
+                  secretkeyref:
+                    name: secrets
+                    key: aws_password
+              - name: env_client_secret
+                valuefrom:
+                  secretkeyref:
+                    name: secrets
+                    key: dfp_client_secret
+              - name: env_salesforce_password
+                valuefrom:
+                  secretkeyref:
+                    name: secrets
+                    key: salesforce_password
+
+
+          restartpolicy: onfailure
+
+
+
+"
+46,"your patch has a number of problems; for example ""- path"" instead of ""path"" but also incorrect referencing of object levels. however, even if you fixed the mistakes this would not work as intended. let's see why.
+
+kubectl patch is a request for a strategic merge patch. when patching arrays, like the .spec.rules and .spec.rules.http.paths in this case, a strategic merge patch can use the defined patch type and merge patch merge key for the object to do the right thing. however, in case of the ingress object no one bothered to define these. this means that any patch will overwrite the entire object; it will not be a nice merge that one is hoping for.
+
+to accomplish the particular change referred to in the question you can do:
+
+kubectl get ing/main-ingress -o json \ 
+  | jq '(.spec.rules[].http.paths[].backend.servicename | select(. == ""be-srvc"")) |= ""some-srvc""' \
+  | kubectl apply -f -
+
+
+the above will change all occurrences of the be-srvc service to some-srvc. keep in mind that there is a short race condition here: if the ingress is modified after kubectl get ran the change will fail with the error operation cannot be fulfilled on ingresses.extensions ""xx"": the object has been modified; to handle that case you need implement a retry logic.
+
+if the indexes are known in the arrays mentioned above you can accomplish the patch directly:
+
+kubectl patch ing/main-ingress --type=json \
+  -p='[{""op"": ""replace"", ""path"": ""/spec/rules/0/http/paths/1/backend/servicename"", ""value"":""some-srvc""}]'
+kubectl patch ing/main-ingress --type=json \
+  -p='[{""op"": ""replace"", ""path"": ""/spec/rules/1/http/paths/1/backend/servicename"", ""value"":""some-srvc""}]'
+
+
+the two commands above will change the backends for sample.domain.com/api and sample2.domain.com/api to some-srvc.
+
+the two commands can also be combined like this:
+
+kubectl patch ing/main-ingress --type=json \
+  -p='[{""op"": ""replace"", ""path"": ""/spec/rules/0/http/paths/1/backend/servicename"", ""value"":""some-srvc""}, {""op"": ""replace"", ""path"": ""/spec/rules/1/http/paths/1/backend/servicename"", ""value"":""some-srvc""}]'
+
+
+this has the same effect and as an added bonus there is no race condition here; the patch guaranteed to be atomic.
+","to update an existing ingress to add a new host, you can update it by editing the resource:
+
+kubectl describe ingress test
+
+
+
+name:             test
+namespace:        default
+address:          178.91.123.132
+default backend:  default-http-backend:80 (10.8.2.3:8080)
+rules:
+  host         path  backends
+  ----         ----  --------
+  foo.bar.com
+               /foo   service1:80 (10.8.0.90:80)
+annotations:
+  nginx.ingress.kubernetes.io/rewrite-target:  /
+events:
+  type     reason  age                from                     message
+  ----     ------  ----               ----                     -------
+  normal   add     35s                loadbalancer-controller  default/test
+
+
+
+kubectl edit ingress test
+
+this pops up an editor with the existing configuration in yaml format.
+modify it to include the new host:
+
+spec:
+  rules:
+  - host: foo.bar.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: service1
+            port:
+              number: 80
+        path: /foo
+        pathtype: prefix
+  - host: bar.baz.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: service2
+            port:
+              number: 80
+        path: /foo
+        pathtype: prefix
+..
+
+after you save your changes, kubectl updates the resource in the api server, which tells the ingress controller to reconfigure the load balancer.
+verify this:
+
+kubectl describe ingress test
+
+
+
+name:             test
+namespace:        default
+address:          178.91.123.132
+default backend:  default-http-backend:80 (10.8.2.3:8080)
+rules:
+  host         path  backends
+  ----         ----  --------
+  foo.bar.com
+               /foo   service1:80 (10.8.0.90:80)
+  bar.baz.com
+               /foo   service2:80 (10.8.0.91:80)
+annotations:
+  nginx.ingress.kubernetes.io/rewrite-target:  /
+events:
+  type     reason  age                from                     message
+  ----     ------  ----               ----                     -------
+  normal   add     45s                loadbalancer-controller  default/test
+
+you can achieve the same outcome by invoking
+
+kubectl replace -f
+
+on a modified ingress yaml file.
+======================================== official document: in some scenarios the exposed url in the backend service differs from the specified path in the ingress rule. without a rewrite any request will return 404. set the annotation `nginx.ingress.kubernetes.io/rewrite-target` to the path expected by the service.  if the application root is exposed in a different path and needs to be redirected, set the annotation `nginx.ingress.kubernetes.io/app-root` to redirect requests for `/`.  !!! example     please check the [rewrite](../../examples/rewrite/readme.md) example. github pages: this example demonstrates how to use rewrite annotations. prerequisites you will need to make sure your ingress targets exactly one ingress controller by specifying the ingress.class annotation, and that you have an ingress controller running in your cluster. deployment rewriting can be controlled using the following annotations name description values nginx.ingress.kubernetes.iorewrite-target target uri where the traffic must be redirected string nginx.ingress.kubernetes.iossl-redirect indicates if the location section is only accessible via ssl defaults to true when ingress contains a certificate bool nginx.ingress.kubernetes.ioforce-ssl-redirect forces the redirection to https even if the ingress is not tls enabled bool nginx.ingress.kubernetes.ioapp-root defines the application root that the controller must redirect if its in context string nginx.ingress.kubernetes.iouse-regex indicates if the paths defined on an ingress use regular expressions bool. create an ingress rule with a rewrite annotation echo apiversion networking.k8s.iov1 kind ingress metadata annotations nginx.ingress.kubernetes.iouse-regex true nginx.ingress.kubernetes.iorewrite-target 2 name rewrite namespace default spec ingressclassname nginx rules - host rewrite.bar.com http paths - path something. pathtype implementationspecific backend service name http-svc port number 80 kubectl create -f - in this ingress definition, any characters captured by . will be assigned to the placeholder 2, which is then used as a parameter in the rewrite-target annotation. for example, the ingress definition above will result in the following rewrites rewrite.bar.comsomething rewrites to rewrite.bar.com rewrite.bar.comsomething rewrites to rewrite.bar.com rewrite.bar.comsomethingnew rewrites to rewrite.bar.comnew app root create an ingress rule with an app-root annotation echo apiversion networking.k8s.iov1 kind ingress metadata annotations nginx.ingress.kubernetes.ioapp-root app1 name approot namespace default spec ingressclassname nginx rules - host approot.bar.com http paths - path pathtype prefix backend service name http-svc port number 80 kubectl create -f - check the rewrite is working curl -i -k httpapproot.bar.com http1.1 302 moved temporarily server nginx1.11.10 date mon, 13 mar 2017 145715 gmt content-type texthtml content-length 162 location httpapproot.bar.comapp1 connection keep-alive. medium website: example 1 apiversion networking.k8s.iov1beta1 kind ingress metadata annotations kubernetes.ioingress.class nginx nginx.ingress.kubernetes.iorewrite-target destination12 name destination-home namespace mynamespace spec rules - host nginx.redirect http paths - backend servicename http-svc serviceport 80 path source. this one does a transparent reverse proxy. it does not update the location header so the url in the browser does not change. example 2 apiversion networking.k8s.iov1beta1 kind ingress metadata annotations kubernetes.ioingress.class nginx nginx.ingress.kubernetes.iorewrite-target httpsnginx.redirectdestination12 name destination-home namespace mynamespace spec rules - host nginx.redirect http paths - backend servicename http-svc serviceport 80 path source. this one changes the location header and the url in the browser is updated http1.1 302 moved temporarily curl -i httpnginx.redirectsource location httpsnginx.redirectdestination http1.1 302 moved temporarily curl -i httpnginx.redirectsourcebar location httpsnginx.redirectdestinationbar this is because the replacement string as specified in rewrite-target an the backend is a simple hello greeter microservice.
+here is the configuration file for the backend deployment: service/access/backend-deployment.yaml 
+
+---
+apiversion: apps/v1
+kind: deployment
+metadata:
+  name: backend
+spec:
+  selector:
+    matchlabels:
+      app: hello
+      tier: backend
+      track: stable
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: hello
+        tier: backend
+        track: stable
+    spec:
+      containers:
+        - name: hello
+          image: ""gcr.io/google-samples/hello-go-gke:1.0""
+          ports:
+            - name: http
+              containerport: 80
+...
+
+create the backend deployment:
+
+kubectl apply -f https://k8s.io/examples/service/access/backend-deployment.yaml
+
+view information about the backend deployment:
+
+kubectl describe deployment backend
+
+the output is similar to this:
+
+name:                           backend
+namespace:                      default
+creationtimestamp:              mon, 24 oct 2016 14:21:02 -0700
+labels:                         app=hello
+                                tier=backend
+                                track=stable
+annotations:                    deployment.kubernetes.io/revision=1
+selector:                       app=hello,tier=backend,track=stable
+replicas:                       3 desired | 3 updated | 3 total | 3 available | 0 unavailable
+strategytype:                   rollingupdate
+minreadyseconds:                0
+rollingupdatestrategy:          1 max unavailable, 1 max surge
+pod template:
+  labels:       app=hello
+                tier=backend
+                track=stable
+  containers:
+   hello:
+    image:              ""gcr.io/google-samples/hello-go-gke:1.0""
+    port:               80/tcp
+    environment:        &lt;none&gt;
+    mounts:             &lt;none&gt;
+  volumes:              &lt;none&gt;
+conditions:
+  type          status  reason
+  ----          ------  ------
+  available     true    minimumreplicasavailable
+  progressing   true    newreplicasetavailable
+oldreplicasets:                 &lt;none&gt;
+newreplicaset:                  hello-3621623197 (3/3 replicas created)
+events:
+...
+
+========================================",N,"i have the following ingress resource:
+
+apiversion: extensions/v1beta1
+kind: ingress
+metadata:
+  name: main-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: ""false""
+    nginx.ingress.kubernetes.io/force-ssl-redirect: ""false""
+    nginx.ingress.kubernetes.io/proxy-read-timeout: ""86400""
+    nginx.ingress.kubernetes.io/proxy-send-timeout: ""86400""
+
+spec:
+  tls:
+  - secretname: the-secret
+    hosts:
+      - sample.domain.com
+      - sample2.domain.com
+      - rabbit.domain.com
+      - hub.domain.com
+      - grafana.domain.com
+
+  rules:
+
+  - host: sample.domain.com
+    http:
+      paths:
+      - path: /
+        backend:
+          servicename: fe-srvc
+          serviceport: 80
+      - path: /api
+        backend:
+          servicename: be-srvc
+          serviceport: 80
+
+  - host: sample2.domain.com
+    http:
+      paths:
+      - path: /
+        backend:
+          servicename: fe2-srvc
+          serviceport: 80
+      - path: /api
+        backend:
+          servicename: be-srvc
+          serviceport: 80
+
+## the extra services ###
+  - host: rabbit.domain.com
+    http:
+      paths:
+      - path: /
+        backend:
+          servicename: rabbitmq-srvc
+          serviceport: 80
+
+
+and i want to patch it after it is deployed.
+
+so i use this, to try and replace the be-srvc value with some-srvc :
+
+kubectl patch ing/main-ingress --patch '{ ""spec"" : { ""rules"": [{""http"":{""paths"":[ {""- path"":""/""},{""backend"":{""servicename"":""other-srvc""}},{""serviceport"":""80""} ] }}]}}'
+
+
+and i get this error:
+
+the ingress ""main-ingress"" is invalid:
+* spec.rules[0].http.backend.servicename: required value
+* spec.rules[0].http.backend.serviceport: invalid value: 0: must be between 1 and 65535, inclusive
+
+
+any insight would be appreciated!
+"
+47,"you can:
+
+
+create a single cronjob resource with exactly one crontab time (like */30 * * * *) and several containers to run
+create several cronjob resources using the same container images but different command and args for each job
+
+
+you can not:
+
+
+create one cron job resource with several crontab times
+consequently not using multiple containers with multiple crontab times
+
+
+so in short, you can place all your binaries in a single container, but cannot solve your problem by defining one resource. the way to go is to use the same image in a distinct cronjob resource per crontab line of your example
+","learn about pods  and jobs , two concepts that cronjobs rely upon.
+read about the detailed format  of cronjob
+
+.spec.schedule
+
+fields.
+for instructions on creating and working with cronjobs, and for an example of a cronjob manifest, see running automated tasks with cronjobs .
+cronjob is part of the kubernetes rest api.
+read the cronjob  api reference for more details.
+======================================== this example cronjob manifest prints the current time and a hello message every minute: application/job/cronjob.yaml 
+
+apiversion: batch/v1
+kind: cronjob
+metadata:
+  name: hello
+spec:
+  schedule: ""* * * * *""
+  jobtemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hello
+            image: busybox:1.28
+            imagepullpolicy: ifnotpresent
+            command:
+            - /bin/sh
+            - -c
+            - date; echo hello from the kubernetes cluster
+          restartpolicy: onfailure
+
+(running automated tasks with a cronjob  takes you through this example in more detail).
+======================================== cron jobs require a config file.
+here is a manifest for a cronjob that runs a simple demonstration task every minute: application/job/cronjob.yaml 
+
+apiversion: batch/v1
+kind: cronjob
+metadata:
+  name: hello
+spec:
+  schedule: ""* * * * *""
+  jobtemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hello
+            image: busybox:1.28
+            imagepullpolicy: ifnotpresent
+            command:
+            - /bin/sh
+            - -c
+            - date; echo hello from the kubernetes cluster
+          restartpolicy: onfailure
+
+run the example cronjob by using this command:
+
+kubectl create -f https://k8s.io/examples/application/job/cronjob.yaml
+
+the output is similar to this:
+
+cronjob.batch/hello created
+
+after creating the cron job, get its status using this command:
+
+kubectl get cronjob hello
+
+the output is similar to this:
+
+name    schedule      suspend   active   last schedule   age
+hello   */1 * * * *   false     0        &lt;none&gt;          10s
+
+as you can see from the results of the command, the cron job has not scheduled or run any jobs yet.
+watch  for the job to be created in around one minute:
+
+kubectl get jobs --watch
+
+the output is similar to this:
+
+name               completions   duration   age
+hello-4111706356   0/1                      0s
+hello-4111706356   0/1           0s         0s
+hello-4111706356   1/1           5s         5s
+
+now you've seen one running job scheduled by the ""hello"" cron job.
+you can stop watching the job and view the cron job again to see that it scheduled the job:
+
+kubectl get cronjob hello
+
+the output is similar to this:
+
+name    schedule      suspend   active   last schedule   age
+hello   */1 * * * *   false     0        50s             75s
+
+you should see that the cron job hello successfully scheduled a job at the time specified in last schedule.
+there are currently 0 active jobs, meaning that the job has completed or failed.
+now, find the pods that the last scheduled job created and view the standard output of one of the pods.
+note: the job name is different from the pod name.
+
+# replace ""hello-4111706356"" with the job name in your system
+pods=$(kubectl get pods --selector=job-name=hello-4111706356 --output=jsonpath={.items[*].metadata.name})
+
+show the pod log:
+
+kubectl logs $pods
+
+the output is similar to this:
+
+fri feb 22 11:02:09 utc 2019
+hello from the kubernetes cluster
+
+========================================",N,"if one has an image with a number of different executables, is it possible to have multiple cron entries with different commands that run at different times in the same kubernetes deployment.
+
+e.g. for some single container image named ""jolly-roger"", i want to schedule the following crontab, without having to manage 4 separate kubernetes applications in different repositories.
+
+*/30 * * * * /pirate-bin/rehoist-the-flag
+0 7,19 * * * /pirate-bin/feed-the-sharks
+45 20 * * * /pirate-bin/count-the-gold
+0 12 * * 1,5 /pirate-bin/make-landlubbers-walk-the-plank
+
+"
+48,"you can use labelselectorasmap(labelselector) function to convert the labelselector into map[string]string map. 
+
+then, use selectorfromset function of package k8s.io/apimachinery/pkg/labels to convert map to selector/strings.
+
+pseudo code:
+
+import (
+    ""k8s.io/apimachinery/pkg/labels""
+    metav1 ""k8s.io/apimachinery/pkg/apis/meta/v1""
+)
+
+func listpod(labelselector metav1.labelselector) {
+
+    labelmap := metav1.labelselectorasmap(labelselector)
+
+    options := metav1.listoptions{
+        labelselector: labels.selectorfromset(labelmap).string(),
+    }
+
+    podlist, err := clientset.corev1().pods(""&lt;namespace&gt;"").list(options)
+
+}
+
+","kubernetes officially supports go  and python  client libraries.
+go client to get the library, run the following command:
+
+go get k8s.io/client-go@kubernetes-&lt;kubernetes-version-number&gt;
+
+, see install.md  for detailed installation instructions.
+see https://github.com/kubernetes/client-go  to see which versions are supported.
+write an application atop of the client-go clients.
+note that client-go defines its own api objects, so if needed, please import api definitions from client-go rather than from the main repository, e.g.,
+
+import ""k8s.io/client-go/kubernetes""
+
+is correct.
+the go client can use the same kubeconfig file  as the kubectl cli does to locate and authenticate to the apiserver.
+see this example .
+if the application is deployed as a pod in the cluster, please refer to the next section .
+python client to use python client , run the following command:
+
+pip install kubernetes
+
+.
+see python client library page  for more installation options.
+the python client can use the same kubeconfig file  as the kubectl cli does to locate and authenticate to the apiserver.
+see this example .
+other languages there are client libraries  for accessing the api from other languages.
+see documentation for other libraries for how they authenticate.
+======================================== appears in: execcredentialspec  cluster contains information to allow an exec plugin to communicate with the kubernetes cluster being authenticated to.
+to ensure that this struct contains everything someone would need to communicate with a kubernetes cluster (just like they would via a kubeconfig), the fields should shadow ""k8s.io/client-go/tools/clientcmd/api/v1"".cluster, with the exception of certificateauthority, since ca data will always be passed to the plugin as bytes.
+field description server [required] string server is the address of the kubernetes cluster (https://hostname:port).
+tls-server-name string tlsservername is passed to the server for sni and is used in the client to check server certificates against.
+if servername is empty, the hostname used to contact the server is used.
+insecure-skip-tls-verify bool insecureskiptlsverify skips the validity check for the server's certificate.
+this will make your https connections insecure.
+certificate-authority-data []byte cadata contains pem-encoded certificate authority certificates.
+if empty, system roots should be used.
+proxy-url string proxyurl is the url to the proxy to be used for all requests to this cluster.
+disable-compression bool disablecompression allows client to opt-out of response compression for all requests to the server.
+this is useful to speed up requests (specifically lists) when client-server network bandwidth is ample, by saving time on compression (server-side) and decompression (client-side): https://github.com/kubernetes/kubernetes/issues/112296.
+config k8s.io/apimachinery/pkg/runtime.rawextension  config holds additional config data that is specific to the exec plugin with regards to the cluster being authenticated to.
+this data is sourced from the clientcmd cluster object's extensions[client.authentication.k8s.io/exec] field: clusters: name: my-cluster cluster: ...
+extensions: name: client.authentication.k8s.io/exec # reserved extension name for per cluster exec config extension: audience: 06e3fbd18de8 # arbitrary config in some environments, the user config may be exactly the same across many clusters (i.e.
+call this exec plugin) minus some details that are specific to each cluster such as the audience.
+this field allows the per cluster config to be directly specified with the cluster info.
+using this field to store secret data is not recommended as one of the prime benefits of exec plugins is that no secrets need to be stored directly in the kubeconfig.
+======================================== appears in: execcredentialspec  cluster contains information to allow an exec plugin to communicate with the kubernetes cluster being authenticated to.
+to ensure that this struct contains everything someone would need to communicate with a kubernetes cluster (just like they would via a kubeconfig), the fields should shadow ""k8s.io/client-go/tools/clientcmd/api/v1"".cluster, with the exception of certificateauthority, since ca data will always be passed to the plugin as bytes.
+field description server [required] string server is the address of the kubernetes cluster (https://hostname:port).
+tls-server-name string tlsservername is passed to the server for sni and is used in the client to check server certificates against.
+if servername is empty, the hostname used to contact the server is used.
+insecure-skip-tls-verify bool insecureskiptlsverify skips the validity check for the server's certificate.
+this will make your https connections insecure.
+certificate-authority-data []byte cadata contains pem-encoded certificate authority certificates.
+if empty, system roots should be used.
+proxy-url string proxyurl is the url to the proxy to be used for all requests to this cluster.
+disable-compression bool disablecompression allows client to opt-out of response compression for all requests to the server.
+this is useful to speed up requests (specifically lists) when client-server network bandwidth is ample, by saving time on compression (server-side) and decompression (client-side): https://github.com/kubernetes/kubernetes/issues/112296.
+config k8s.io/apimachinery/pkg/runtime.rawextension  config holds additional config data that is specific to the exec plugin with regards to the cluster being authenticated to.
+this data is sourced from the clientcmd cluster object's extensions[client.authentication.k8s.io/exec] field: clusters: name: my-cluster cluster: ...
+extensions: name: client.authentication.k8s.io/exec # reserved extension name for per cluster exec config extension: audience: 06e3fbd18de8 # arbitrary config in some environments, the user config may be exactly the same across many clusters (i.e.
+call this exec plugin) minus some details that are specific to each cluster such as the audience.
+this field allows the per cluster config to be directly specified with the cluster info.
+using this field to store secret data is not recommended as one of the prime benefits of exec plugins is that no secrets need to be stored directly in the kubeconfig.
+========================================",N,"in the kubernetes client-go api (or another library that uses it), is there a utility function to convert a k8s.io/apimachinery/pkg/apis/meta/v1/labelselector to a string to fill the field labelselector in k8s.io/apimachinery/pkg/apis/meta/v1/listoptions?
+
+i digged through the code of client-go but i can't find a function like that.
+
+the labelselector.marshall() nor labelselector.string() give me that (unsurprisingly, because that's not their purpose, but i tried it anyway).
+
+background
+
+i have spec descriptions like k8s.io/api/extensions/v1beta1/deployment, and want to use it's set of selector labels (i.e. the selector field) to query it's pods using 
+
+options := metav1.listoptions{
+    labelselector: &lt;stringified labels&gt;,
+}
+
+podlist, err := clientset.corev1().pods(&lt;namespace&gt;).list(options)
+
+"
+49,"a container exits when its main process exits. doing something like:
+
+docker run -itd debian
+
+
+to hold the container open is frankly a hack that should only be used for quick tests and examples. if you just want a container for testing for a few minutes, i would do:
+
+docker run -d debian sleep 300
+
+
+which has the advantage that the container will automatically exit if you forget about it. alternatively, you could put something like this in a while loop to keep it running forever, or just run an application such as top. all of these should be easy to do in kubernetes.
+
+the real question is why would you want to do this? your container should be providing a service, whose process will keep the container running in the background.
+","check out container runtimes  to understand your options for an alternative.
+if you find a defect or other technical concern relating to migrating away from dockershim, you can report an issue  to the kubernetes project.
+======================================== the container runtime talks to the kubelet over a unix socket using the cri protocol , which is based on the grpc framework.
+the kubelet acts as a client, and the runtime acts as the server.
+in some cases, you might find it useful to know which socket your nodes use.
+for example, with the removal of dockershim in kubernetes v1.24 and later, you might want to know whether you use docker engine with dockershim.
+note: if you currently use docker engine in your nodes with cri-dockerd, you aren't affected by the dockershim removal.
+you can check which socket you use by checking the kubelet configuration on your nodes.
+read the starting commands for the kubelet process:
+
+tr \\0 ' ' &lt; /proc/""$(pgrep kubelet)""/cmdline
+
+if you don't have tr or pgrep, check the command line for the kubelet process manually.
+in the output, look for the --container-runtime flag and the --container-runtime-endpoint flag.
+if your nodes use kubernetes v1.23 and earlier and these flags aren't present or if the --container-runtime flag is not remote, you use the dockershim socket with docker engine.
+the --container-runtime command line argument is not available in kubernetes v1.27 and later.
+if the --container-runtime-endpoint flag is present, check the socket name to find out which runtime you use.
+for example,
+
+unix:///run/containerd/containerd.sock
+
+is the containerd endpoint.
+if you want to change the container runtime on a node from docker engine to containerd, you can find out more information on migrating from docker engine to containerd , or, if you want to continue using docker engine in kubernetes v1.24 and later, migrate to a cri-compatible adapter like cri-dockerd .
+======================================== to attach a process that is already running in a container, see kubectl attach .
+docker: docker ps
+
+container id        image               command                  created             status              ports                names
+55c103fa1296        nginx               ""nginx -g 'daemon of…""   5 minutes ago       up 5 minutes        0.0.0.0:80-&gt;80/tcp   nginx-app
+
+
+
+docker attach 55c103fa1296
+...
+
+kubectl:
+
+kubectl get pods
+
+
+
+name              ready     status    restarts   age
+nginx-app-5jyvm   1/1       running   0          10m
+
+
+
+kubectl attach -it nginx-app-5jyvm
+...
+
+to detach from the container, you can type the escape sequence ctrl+p followed by ctrl+q.
+========================================",Y,"i'm now trying to run a simple container with shell (/bin/bash) on a kubernetes cluster.
+
+i thought that there was a way to keep a container running on a docker container by using pseudo-tty and detach option (-td option on docker run command).
+
+for example,
+
+$ sudo docker run -td ubuntu:latest
+
+
+is there an option like this in kubernetes?
+
+i've tried running a container by using a kubectl run-container command like:
+
+kubectl run-container test_container ubuntu:latest --replicas=1
+
+
+but the container exits for a few seconds (just like launching with the docker run command without options i mentioned above). and replicationcontroller launches it again repeatedly.
+
+is there a way to keep a container running on kubernetes like the -td options in the docker run command?
+"
+50,"you need to either override (with new value) or unset the value, if you only comment out the section you are not doing any of the above and the default value is going to be used.
+basically you are looking to unset a default value. as per banzaicloud example this can be done like so:
+helm install stable/chart-name --set sftp.allowedmacs=null
+
+you can also use override value file in a similar way:
+sftp:
+    allowedmacs: null
+    allowedciphers: aes256-ctr
+
+this is available in helm since version 2.6. if you like in-depth information you can review the issue and the subsequent pr that introduced the feature.
+","helm chart templates are written in the
+ go template
+language , with the addition of 50 or so
+add-on template functions
+ from the sprig
+library  and a few other
+ specialized
+functions .all template files are stored in a chart's  templates/  folder. when helm
+renders the charts, it will pass every file in that directory through the
+template engine.values for the templates are supplied two ways:chart developers may supply a file called  values.yaml  inside of a chart.
+this file can contain default values. chart users may supply a yaml file that contains values. this can be provided
+on the command line with  helm install .when a user supplies custom values, these values will override the values in the
+chart's  values.yaml  file.template filestemplate files follow the standard conventions for writing go templates (see
+ the text/template go package
+documentation  for details). an example
+template file might look something like this:apiversion :   v1 
+ kind :   replicationcontroller 
+ metadata : 
+    name :   deis-database 
+    namespace :   deis 
+    labels : 
+      app.kubernetes.io/managed-by :   deis 
+ spec : 
+    replicas :   1 
+    selector : 
+      app.kubernetes.io/name :   deis-database 
+    template : 
+      metadata : 
+        labels : 
+          app.kubernetes.io/name :   deis-database 
+      spec : 
+        serviceaccount :   deis-database 
+        containers : 
+          -  name :   deis-database 
+            image :   {{   .values.imageregistry }}/postgres:{{ .values.dockertag }} 
+            imagepullpolicy :   {{   .values.pullpolicy }} 
+            ports : 
+              -  containerport :   5432 
+            env : 
+              -  name :   database_storage 
+                value :   {{   default ""minio"" .values.storage }}the above example, based loosely on
+ https://github.com/deis/charts , is a template
+for a kubernetes replication controller. it can use the following four template
+values (usually defined in a  values.yaml  file):imageregistry : the source registry for the docker image. dockertag : the tag for the docker image. pullpolicy : the kubernetes pull policy. storage : the storage backend, whose default is set to  ""minio""all of these values are defined by the template author. helm does not require or
+dictate parameters.to see many working charts, check out the cncf
+ artifact
+hub .predefined valuesvalues that are supplied via a  values.yaml  file (or via the  --set  flag) are
+accessible from the  .values  object in a template. but there are other
+pre-defined pieces of data you can access in your templates.the following values are pre-defined, are available to every template, and
+cannot be overridden. as with all values, the names are  case sensitive .release.name : the name of the release (not the chart) release.namespace : the namespace the chart was released to. release.service : the service that conducted the release. release.isupgrade : this is set to true if the current operation is an
+upgrade or rollback. release.isinstall : this is set to true if the current operation is an
+install. chart : the contents of the  chart.yaml . thus, the chart version is
+obtainable as  chart.version  and the maintainers are in  chart.maintainers . files : a map-like object containing all non-special files in the chart. this
+will not give you access to templates, but will give you access to additional
+files that are present (unless they are excluded using  .helmignore ). files
+can be accessed using  {{ index .files ""file.name"" }}  or using the
+ {{.files.get name }}  function. you can also access the contents of the file
+as  []byte  using  {{ .files.getbytes }} capabilities : a map-like object that contains information about the versions
+of kubernetes ( {{ .capabilities.kubeversion }} ) and the supported kubernetes
+api versions ( {{ .capabilities.apiversions.has ""batch/v1"" }} )note:  any unknown  chart.yaml  fields will be dropped. they will not be
+accessible inside of the  chart  object. thus,  chart.yaml  cannot be used to
+pass arbitrarily structured data into the template. the values file can be used
+for that, t a chart is organized as a collection of files inside of a directory. the
+directory name is the name of the chart (without versioning information). thus,
+a chart describing wordpress would be stored in a  wordpress/  directory.inside of this directory, helm will expect a structure that matches this:wordpress/
+   chart.yaml          # a yaml file containing information about the chart
+   license             # optional: a plain text file containing the license for the chart
+   readme.md           # optional: a human-readable readme file
+   values.yaml         # the default configuration values for this chart
+   values.schema.json  # optional: a json schema for imposing a structure on the values.yaml file
+   charts/             # a directory containing any charts upon which this chart depends.
+   crds/               # custom resource definitions
+   templates/          # a directory of templates that, when combined with values,
+                       # will generate valid kubernetes manifest files.
+   templates/notes.txt # optional: a plain text file containing short usage noteshelm reserves use of the  charts/ ,  crds/ , and  templates/  directories, and
+of the listed file names. other files will be left as they are. there are three potential sources of values:a chart's  values.yaml  file a values file supplied by  helm install -f  or  helm upgrade -f the values passed to a  --set  or  --set-string  flag on  helm install  or
+ helm upgradewhen designing the structure of your values, keep in mind that users of your
+chart may want to override them via either the  -f  flag or with the  --set 
+option.since  --set  is more limited in expressiveness, the first guidelines for
+writing your  values.yaml  file is  make it easy to override from  --set .for this reason, it's often better to structure your values file using maps.difficult to use with  --set :servers : 
+    -  name :   foo 
+      port :   80 
+    -  name :   bar 
+      port :   81the above cannot be expressed with  --set  in helm  <=2.4 . in helm 2.5,
+accessing the port on foo is  --set servers[0].port=80 . not only is it harder
+for the user to figure out, but it is prone to errors if at some later time the
+order of the  servers  is changed.easy to use:servers : 
+    foo : 
+      port :   80 
+    bar : 
+      port :   81accessing foo's port is much more obvious:  --set servers.foo.port=80 .",Y,"i have a downloaded file through helm inspect called sftp.yaml
+i have a parameter in that sftp.yaml file:-
+sftp:
+    allowedmacs: &quot;hmac-sha2-512&quot;
+    allowedciphers: aes256-ctr
+
+now if i install the corresponding helm chart after commenting out the entire line of &quot;allowedmacs&quot; from custom values files i.e. &quot;sftp.yaml&quot;, then k8s takes the delta of sftp.yaml and the actual values.yaml and then use values.yaml's &quot;allowedmacs&quot;.
+however what i want is if &quot;allowedmacs&quot; line is commented in &quot;sftp.yaml&quot; custom values file, then it should not set the env variable at all, or sets it as null.
+presently my deployment file's env section looks like
+  - name: macs
+    value: {{ default &quot;&quot; .values.sftp.allowedmacs | quote }}
+
+"
+51,"from eks 1.23 on a container storage interface (csi) driver is needed in order to get your persisentvolumeclaims served by a persistentvolume as you are used to from earlier eks versions.
+the docs tell us, what needs to be configured:
+solution: configure amazon ebs csi driver for working persistentvolumes in eks
+in essence we need to enable the aws ebs csi driver as an eks addon. but beforehand we need to enable the iam oidc provider and create the iam role for the ebs csi driver. the easiest way to do both is to use eksctl (other ways like using plain aws cli or the aws gui are described in the docs).
+1.) install eksctl
+we assume here that the aws cli is installed and configured - and you have access to your eks cluster. to use eksctl we need to install it first. on a mac use brew like:
+brew tap weaveworks/tap
+brew install weaveworks/tap/eksctl
+
+or on linux use:
+curl --silent --location &quot;https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz&quot; | tar xz -c /tmp
+sudo mv /tmp/eksctl /usr/local/bin
+
+2.) enable iam oidc provider
+a prerequisite for the ebs csi driver to work is to have an existing aws identity and access management (iam) openid connect (oidc) provider for your cluster. this iam oidc provider can be enabled with the following command:
+eksctl utils associate-iam-oidc-provider --region=eu-central-1 --cluster=yourclusternamehere --approve
+
+3.) create amazon ebs csi driver iam role
+now having eksctl in place, create the iam role:
+eksctl create iamserviceaccount \
+  --region eu-central-1 \
+  --name ebs-csi-controller-sa \
+  --namespace kube-system \
+  --cluster yourclusternamehere \
+  --attach-policy-arn arn:aws:iam::aws:policy/service-role/amazonebscsidriverpolicy \
+  --approve \
+  --role-only \
+  --role-name amazoneks_ebs_csi_driverrole
+
+as you can see aws maintains a managed policy for us we can simply use (aws maintains a managed policy, available at arn arn:aws:iam::aws:policy/service-role/amazonebscsidriverpolicy). only if you use encrypted ebs drives you need to additionally add configuration to the policy.
+the command...
+
+...deploys an aws cloudformation stack that creates an iam role,
+attaches the iam policy to it, and annotates the existing
+ebs-csi-controller-sa service account with the amazon resource name
+(arn) of the iam role.
+
+4.) add the amazon ebs csi add-on
+now we can finally add the ebs csi add-on. therefor we also need the aws account id which we can obtain by running aws sts get-caller-identity --query account --output text (see quick way to get aws account number from the aws cli tools?). now the eksctl create addon command looks like this:
+eksctl create addon --name aws-ebs-csi-driver --cluster yourclusternamehere --service-account-role-arn arn:aws:iam::$(aws sts get-caller-identity --query account --output text):role/amazoneks_ebs_csi_driverrole --force
+
+now your persistentvolumeclaim should get the status bound while a ebs volume got created for you - and the tekton pipeline should run again.
+","in this exercise, you create a hostpath persistentvolume.
+kubernetes supports hostpath for development and testing on a single-node cluster.
+a hostpath persistentvolume uses a file or directory on the node to emulate network-attached storage.
+in a production cluster, you would not use hostpath.
+instead a cluster administrator would provision a network resource like a google compute engine persistent disk, an nfs share, or an amazon elastic block store volume.
+cluster administrators can also use storageclasses  to set up dynamic provisioning .
+here is the configuration file for the hostpath persistentvolume: pods/storage/pv-volume.yaml 
+
+apiversion: v1
+kind: persistentvolume
+metadata:
+  name: task-pv-volume
+  labels:
+    type: local
+spec:
+  storageclassname: manual
+  capacity:
+    storage: 10gi
+  accessmodes:
+    - readwriteonce
+  hostpath:
+    path: ""/mnt/data""
+
+the configuration file specifies that the volume is at /mnt/data on the cluster's node.
+the configuration also specifies a size of 10 gibibytes and an access mode of readwriteonce, which means the volume can be mounted as read-write by a single node.
+it defines the storageclass name  manual for the persistentvolume, which will be used to bind persistentvolumeclaim requests to this persistentvolume.
+note: this example uses the readwriteonce access mode, for simplicity.
+for production use, the kubernetes project recommends using the readwriteoncepod access mode instead.
+create the persistentvolume:
+
+kubectl apply -f https://k8s.io/examples/pods/storage/pv-volume.yaml
+
+view information about the persistentvolume:
+
+kubectl get pv task-pv-volume
+
+the output shows that the persistentvolume has a status of available.
+this means it has not yet been bound to a persistentvolumeclaim.
+
+name             capacity   accessmodes   reclaimpolicy   status      claim     storageclass   reason    age
+task-pv-volume   10gi       rwo           retain          available             manual                   4s
+
+======================================== the volumebindingmode field controls when volume binding and dynamic provisioning  should occur.
+when unset, immediate mode is used by default.
+the immediate mode indicates that volume binding and dynamic provisioning occurs once the persistentvolumeclaim is created.
+for storage backends that are topology-constrained and not globally accessible from all nodes in the cluster, persistentvolumes will be bound or provisioned without knowledge of the pod's scheduling requirements.
+this may result in unschedulable pods.
+a cluster administrator can address this issue by specifying the waitforfirstconsumer mode which will delay the binding and provisioning of a persistentvolume until a pod using the persistentvolumeclaim is created.
+persistentvolumes will be selected or provisioned conforming to the topology that is specified by the pod's scheduling constraints.
+these include, but are not limited to, resource requirements , node selectors , pod affinity and anti-affinity , and taints and tolerations .
+the following plugins support waitforfirstconsumer with dynamic provisioning: csi volumes, provided that the specific csi driver supports this the following plugins support waitforfirstconsumer with pre-created persistentvolume binding: csi volumes, provided that the specific csi driver supports this local  note: if you choose to use waitforfirstconsumer, do not use nodename in the pod spec to specify node affinity.
+if nodename is used in this case, the scheduler will be bypassed and pvc will remain in pending state.
+instead, you can use node selector for
+
+kubernetes.io/hostname
+
+: storage/storageclass/pod-volume-binding.yaml 
+
+apiversion: v1
+kind: pod
+metadata:
+  name: task-pv-pod
+spec:
+  nodeselector:
+    kubernetes.io/hostname: kube-01
+  volumes:
+    - name: task-pv-storage
+      persistentvolumeclaim:
+        claimname: task-pv-claim
+  containers:
+    - name: task-pv-container
+      image: nginx
+      ports:
+        - containerport: 80
+          name: ""http-server""
+      volumemounts:
+        - mountpath: ""/usr/share/nginx/html""
+          name: task-pv-storage
+
+======================================== kubernetes
+1.31
+is now available in amazon eks.
+for more information about kubernetes
+1.31
+, see the official release announcement .
+important the kubelet flag --keep-terminated-pod-volumes deprecated since 2017 has been removed as part of the
+v1.31
+release.
+this change impacts how terminated pod volumes are handled by the kubelet.
+if you are using this flag in your node configurations, you must update your bootstrap scripts and launch templates to remove it before upgrading.
+the beta volumeattributesclass feature gate and api resource is enabled in amazon eks
+v1.31
+.
+this feature allows cluster operators to modify mutable properties of persistent volumes (pvs) managed by compatible csi drivers, including the amazon ebs csi driver.
+to leverage this feature, ensure that your csi driver supports the volumeattributesclass feature (for the amazon ebs csi driver, upgrade to version
+v1.35.0
+or later to automatically enable the feature).
+you will be able to create volumeattributesclass objects to define the desired volume attributes, such as volume type and throughput, and associate them with your persistent volume claims (pvcs).
+see the official kubernetes documentation as well as the documentation of your csi driver for more information.
+for more information about the amazon ebs csi driver, see store kubernetes volumes with amazon ebs .
+kubernetes support for apparmor has graduated to stable and is now generally available for public use.
+this feature allows you to protect your containers with apparmor by setting the
+apparmorprofile.type
+field in the containerâs securitycontext.
+prior to kubernetes
+v1.30
+, apparmor was controlled by annotations.
+starting with
+v1.30
+, it is controlled using fields.
+to leverage this feature, we recommend migrating away from annotations and using the
+apparmorprofile.type
+field to ensure that your workloads are compatible.
+the persistentvolume last phase transition time feature has graduated to stable and is now generally available for public use in kubernetes
+v1.31
+.
+this feature introduces a new field,
+.status.lasttransitiontime
+, in the persistentvolumestatus, which provides a timestamp of when a persistentvolume last transitioned to a different phase.
+this enhancement allows for better tracking and management of persistentvolumes, particularly in scenarios where understanding the lifecycle of volumes is important.
+for the complete kubernetes
+1.31
+changelog, see https://github.com/kubernetes/kubernetes/blob/master/changelog/changelog-1.31.md ========================================",N,"we have a eks setup provisioned where we use a cloud native buildpacks based tekton pipeline our pipelineruns are stuck and pending forever without getting a pod resource. we created a persistentvolumeclaim like this:
+apiversion: v1
+kind: persistentvolumeclaim
+metadata:
+  name: buildpacks-source-pvc
+spec:
+  accessmodes:
+    - readwriteonce
+  resources:
+    requests:
+      storage: 500mi
+
+having a look into the events of this pvc after creation there are the following events indicating something is wrong with our eks setup:
+the command kubectl describe pvc buildpacks-source-pvc gives the following event messages:
+name:          buildpacks-source-pvc
+namespace:     default
+storageclass:  gp2
+status:        pending
+volume:
+labels:        &lt;none&gt;
+annotations:   volume.beta.kubernetes.io/storage-provisioner: ebs.csi.aws.com
+               volume.kubernetes.io/selected-node: ip-999-99-99-99.eu-central-1.compute.internal
+               volume.kubernetes.io/storage-provisioner: ebs.csi.aws.com
+finalizers:    [kubernetes.io/pvc-protection]
+capacity:
+access modes:
+volumemode:    filesystem
+used by:       affinity-assistant-0b3d266b91-0
+               affinity-assistant-53a7c08baf-0
+               affinity-assistant-a375f28de3-0
+               affinity-assistant-e8cb1a6e15-0
+               buildpacks-test-pipeline-run-9rz4l-fetch-repository-pod
+events:
+  type    reason                age                     from                         message
+  ----    ------                ----                    ----                         -------
+  normal  externalprovisioning  3m43s (x561 over 143m)  persistentvolume-controller  waiting for a volume to be created, either by external provisioner &quot;ebs.csi.aws.com&quot; or manually created by system administrator
+
+what is this ebs csi thing and how do we get our cluster working as before?
+"
