@@ -20,6 +20,30 @@ python LLM_keypoint.py
 
 ## Update Log
 
+### 2025.3.4
+
+#### RAGAS Format Introduction
+
+Generation Metrics:
+
+- Faithfulness
+    
+  Measure how factually consistent a **RAG Answer** is with the **retrieved context**(top 3 chunks). Ranges from 0 to 1, higher scores indicating better consistency and less Illustration.
+
+- Answer Relevance
+
+  Measure how relevant a **RAG Answer** is to the **user input**(Query). Higher scores indicate better alignment with the user input, while lower scores are given if the response is incomplete or includes redundant information.
+
+Retrieval Metrics:
+
+- Context Precision
+
+  Measure the proportion of relevant chunks in the **retrieved contexts**. It is calculated as the mean of the precision@k for each chunk in the context. Precision@k is the ratio of the number of relevant chunks at rank k to the total number of chunks at rank k.
+
+- Context Recall
+
+  Measure how many of the relevant documents (or pieces of information) were successfully retrieved. Or measure whether each point in **Ground Truth** is included in the **retrieved contexts**.
+
 ### 2025.2.22
 
 #### 1. Repository Structure Changes

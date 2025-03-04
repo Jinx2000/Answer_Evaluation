@@ -1,10 +1,14 @@
-import json
+import json, os
 import sys
 from ragas import evaluate
-from ragas.metrics import faithfulness, answer_relevancy, context_precision, answer_correctness
+from ragas.metrics import faithfulness, answer_relevancy, context_precision, context_recall, answer_correctness
 from datasets import Dataset
 import faulthandler
 faulthandler.enable()
+
+
+os.environ["http_proxy"] = "http://localhost:7890"
+os.environ["https_proxy"] = "http://localhost:7890"
 
 # Input JSON file from previous step
 json_filename = "processed_data.json"
@@ -26,7 +30,7 @@ generated_responses = [item["generated_response"] for item in data]
 if use_reference:
     reference_answers = [item["reference_answer"] if item["reference_answer"] else "" for item in data]
     print("Running RAGAS with reference answers...")
-    metrics = [faithfulness, answer_relevancy, context_precision, answer_correctness]
+    metrics = [faithfulness, answer_relevancy, context_precision, context_recall, answer_correctness]
 
     # RAGAS requires dataset:
     dataset = Dataset.from_dict({
@@ -48,18 +52,20 @@ if use_reference:
     scores = evaluate(
         dataset=dataset,
         metrics=metrics,
-        column_map=column_map
+        column_map=column_map,
+        llm="gpt-4o-mini"
     )
 
 else:
     print("Running RAGAS without reference answers...")
-    metrics = [faithfulness, answer_relevancy, context_precision]  # No `answer_correctness`
+    metrics = [faithfulness, answer_relevancy, context_precision, context_recall]  # No `answer_correctness`
     scores = evaluate(
         questions=questions,
         generated_responses=generated_responses,
         retrieved_contexts=retrieved_contexts,
         reference_answers=None,
-        metrics=metrics 
+        metrics=metrics,
+        llm="gpt-4o-mini"
     )
 
 
@@ -70,8 +76,10 @@ for i in range(len(data)):
         "question": data[i]["question"],
         "retrieved_contexts": data[i]["retrieved_contexts"],
         "generated_response": data[i]["generated_response"],
+        "reference_answer": data[i]["reference_answer"],
         "faithfulness": scores["faithfulness"][i],
         "context_precision": scores["context_precision"][i],
+        "context_recall": scores["context_recall"][i],
         "answer_relevancy": scores["answer_relevancy"][i],
     }
     if use_reference:
