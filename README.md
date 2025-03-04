@@ -20,6 +20,56 @@ python LLM_keypoint.py
 
 ## Update Log
 
+### 2025.3.4 (2)
+
+#### RAGAS_SCORES Metrics Explaination
+
+##### Example
+```
+{
+    "faithfulness": 0.0,
+    "context_precision": 0.5833,
+    "context_recall": 0.25,
+    "answer_relevancy": 0.8229,
+    "answer_correctness": 0.6787
+}
+```
+
+Each metric is explained in detail below:
+
+---
+
+1. Faithfulness (0.0)
+   - Definition: Measures if the `RAG-generated answer (LLM response)` is supported by the `retrieved context (RAG documents)`.
+   - 0.0 Score Meaning: The generated answer is not grounded in the retrieved documents—it may contain hallucinated or incorrect information.
+
+---
+
+2. Context Precision (0.5833)
+   - Definition: Measures how many of the `retrieved documents (RAG context)` are actually relevant to the `user input(Stack Overflow question)`.
+   - 0.58 Score Meaning: Some retrieved documents were useful, but many were irrelevant, affecting response accuracy.
+
+---
+
+3. Context Recall (0.25)
+   - Definition: Measures how much of the `reference answer (Stack Overflow answer)` was found in the `retrieved context (RAG documents)`.
+   - 0.25 Score Meaning: most of the necessary information was missing, making it difficult for the LLM to generate a complete answer.
+
+---
+
+4. Answer Relevancy (0.8229)
+   - Definition: Measures how well the `RAG-generated answer (LLM response)` aligns with the `user input(Stack Overflow question)`.
+   - 0.82 Score Meaning: The LLM’s answer mostly addresses the question, but some details might be missing.
+
+---
+
+5. Answer Correctness (0.6787)
+   - Definition: Measures how factually correct the `RAG-generated answer (LLM response)` is compared to the `reference answer (Stack Overflow answer)`.
+   - 0.68 Score Meaning: The answer is partially correct but contains errors or missing details.
+
+---
+
+
 ### 2025.3.4
 
 #### RAGAS Format Introduction
