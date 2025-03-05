@@ -69,6 +69,9 @@ Each metric is explained in detail below:
 
 ---
 
+**Noted that for now we're only using the non-LLM method, which supposely have less accuracy compare to LLM method.**
+
+**We're considering using LLM method and test on it next week.**
 
 ### 2025.3.4
 
