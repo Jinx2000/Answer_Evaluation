@@ -1,3 +1,5 @@
+# Remember ```pip install ragas```
+
 import json, os
 import sys
 from ragas import evaluate
@@ -6,9 +8,11 @@ from datasets import Dataset
 import faulthandler
 faulthandler.enable()
 
+API_KEY= "Put your api key here"
 
 os.environ["http_proxy"] = "http://localhost:7890"
 os.environ["https_proxy"] = "http://localhost:7890"
+os.environ["OPENAI_API_KEY"] = API_KEY
 
 # Input JSON file from previous step
 json_filename = "processed_data.json"
@@ -26,6 +30,7 @@ use_reference = not (len(sys.argv) > 1 and sys.argv[1].lower() == "evaluateragon
 questions = [item["question"] for item in data]
 retrieved_contexts = [item["retrieved_contexts"] for item in data]  # Already an array of strings
 generated_responses = [item["generated_response"] for item in data]
+gpt_response = [item["gpt_Generated_Response_withoutRAG"] for item in data]
 
 if use_reference:
     reference_answers = [item["reference_answer"] if item["reference_answer"] else "" for item in data]
@@ -92,3 +97,21 @@ with open(output_filename, "w", encoding="utf-8") as jsonfile:
     json.dump(scored_data, jsonfile, indent=4, ensure_ascii=False)
 
 print(f"RAGAS scoring completed. Output saved to {output_filename}")
+
+def compare_baseline():
+
+    gpt_answers = [gpt_answer for gpt_answer in gpt_answers]
+    reference_answers = [item["reference_answer"] if item["reference_answer"] else "" for item in data]
+
+    # Fill it with None.
+    contexts = [[] for _ in gpt_answers]  # 空上下文列表
+
+    dataset = Dataset.from_dict({
+        "question": questions,
+        "answer": gpt_answers,
+        "ground_truth": reference_answers,
+        "contexts": contexts  # 即使无上下文也需保留字段
+    })
+
+    result = evaluate(dataset, metrics=[answer_correctness])
+    print(result)
