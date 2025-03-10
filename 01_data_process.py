@@ -36,7 +36,8 @@ with open(csv_filename, "r", encoding="utf-8") as csvfile:
             "question": question,
             "retrieved_contexts": retrieved_contexts,  # Now correctly formatted as a list
             "generated_response": row["gpt_Generated_Response"].strip(),
-            "reference_answer": row["Answer Body"].strip() if row["Answer Body"].strip() else None  # Set to None if empty
+            "reference_answer": row["Answer Body"].strip() if row["Answer Body"].strip() else None,  # Set to None if empty
+            "gpt_response": row["gpt_Generated_Response_withoutRAG"]
         }
         
         data.append(entry)
