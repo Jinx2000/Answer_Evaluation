@@ -83,7 +83,7 @@ Generation Metrics:
     
   Measure how factually consistent a **RAG Answer** is with the **retrieved context**(top 3 chunks). Ranges from 0 to 1, higher scores indicating better consistency and less Illustration.
 
-- Answer Relevance
+- Response Relevance
 
   Measure how relevant a **RAG Answer** is to the **user input**(Query). Higher scores indicate better alignment with the user input, while lower scores are given if the response is incomplete or includes redundant information.
 
