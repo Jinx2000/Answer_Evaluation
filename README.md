@@ -20,6 +20,45 @@ python LLM_keypoint.py
 
 ## Update Log
 
+### 2025.3.10
+
+#### RAGAS_NOLLM_SCORES Metrics Explanation
+
+##### Example Output:
+```
+{
+    "nonllm_string_similarity": 0.2547,
+    "bleu_score": 0.1238,
+    "rouge_score": 0.1618
+}
+```
+
+Each metric is explained in detail below:
+
+---
+
+1. Non-LLM String Similarity (0.2547)  
+   - Definition: Measures how similar the `RAG-generated answer (LLM response)` is to the `reference answer (Stack Overflow answer)` using traditional string similarity methods such as Levenshtein distance, Jaro similarity, or Hamming distance.  
+   - 0.25 Score Meaning: The generated answer shares some similarities with the reference answer but has significant differences, indicating possible wording changes or missing details.
+
+---
+
+2. BLEU Score (0.1238)  
+   - Definition: Measures the **n-gram precision** of the `RAG-generated answer (LLM response)` compared to the `reference answer (Stack Overflow answer)`, penalizing overly short responses. BLEU is commonly used for machine translation and text generation evaluation.  
+   - 0.12 Score Meaning: The generated answer has low overlap in word sequences with the reference answer, suggesting potential paraphrasing, missing key phrases, or incorrect information.
+
+---
+
+3. ROUGE Score (0.1618)  
+   - Definition: Measures the **word overlap** between the `RAG-generated answer (LLM response)` and the `reference answer (Stack Overflow answer)`. It considers recall, precision, and F1-score, making it useful for summarization evaluation.  
+   - 0.16 Score Meaning: The generated answer contains some words from the reference answer but lacks substantial overlap, indicating missing key details or different phrasing.
+
+---
+
+**Noted that these three metrics are non-LLM.**
+
+**Even though RAGAS provided a non-LLM version for `Context Precision` and `Context Recall`, they cannot be computed using our current input data. More detail in the design doc of the evaluation system.**
+
 ### 2025.3.4 (2)
 
 #### RAGAS_SCORES Metrics Explaination
@@ -69,9 +108,9 @@ Each metric is explained in detail below:
 
 ---
 
-**Noted that for now we're only using the non-LLM method, which supposely have less accuracy compare to LLM method.**
+**Noted that for now we're using the LLM method.**
 
-**We're considering using LLM method and test on it next week.**
+**We're considering using non-LLM method and test on it next week.**
 
 ### 2025.3.4
 
