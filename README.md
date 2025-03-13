@@ -20,6 +20,17 @@ python LLM_keypoint.py
 
 ## Update Log
 
+### 2025.3.13
+
+---
+
+1. Intergrated baseline as test_0, now 01, 02, 04.py can all run test_0 without specifically asked for baseline. 
+   - (Note: Baseline's test0processed_data.json has "retrieved_contexts": [], which means it cannot run **faithfulness**, **context precision**, and **context recall** metrics in RAGAS. I've set them to 0.0 at this point, but maybe not the best solution (set them to N/A or something in the future).)
+
+2. Fixed the graph a bit, now 04.py will save the graphs in /graphs, naming each test's number distribution correctly as `number_distribution_test_n.png`, and the overall comparison to `rag_comparison_by_metrics_0toN.png`. Should be easier to archieve. 
+
+---
+
 ### 2025.3.10
 
 #### RAGAS_NOLLM_SCORES Metrics Explanation
@@ -58,6 +69,8 @@ Each metric is explained in detail below:
 **Noted that these three metrics are non-LLM.**
 
 **Even though RAGAS provided a non-LLM version for `Context Precision` and `Context Recall`, they cannot be computed using our current input data. More detail in the design doc of the evaluation system.**
+
+---
 
 ### 2025.3.4 (2)
 
