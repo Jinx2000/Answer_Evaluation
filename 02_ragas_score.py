@@ -6,16 +6,11 @@ from ragas import evaluate
 import faulthandler
 faulthandler.enable()
 
-# API_KEY= "Put your api key here"
+API_KEY= "Put your api key here"
 
 os.environ["http_proxy"] = "http://localhost:7890"
 os.environ["https_proxy"] = "http://localhost:7890"
-# os.environ["OPENAI_API_KEY"] = API_KEY
-
-# Input JSON file from previous step
-# json_filename = "test_1processed_data.json"
-# Output JSON file
-# output_filename = "test_1ragas_scores.json"
+os.environ["OPENAI_API_KEY"] = API_KEY
 
 
 def score_rag(json_filename, output_filename):
