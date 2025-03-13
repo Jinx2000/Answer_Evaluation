@@ -1,24 +1,24 @@
 # Remember ```pip install ragas```
 import json, os, csv
-import sys
-from ragas import evaluate
 from ragas.metrics import faithfulness, answer_relevancy, context_precision, context_recall, answer_correctness
 from datasets import Dataset
+from ragas import evaluate
 import faulthandler
 faulthandler.enable()
 
-API_KEY= "Put your api key here"
+# API_KEY= "Put your api key here"
 
 os.environ["http_proxy"] = "http://localhost:7890"
 os.environ["https_proxy"] = "http://localhost:7890"
-os.environ["OPENAI_API_KEY"] = API_KEY
+# os.environ["OPENAI_API_KEY"] = API_KEY
 
 # Input JSON file from previous step
-json_filename = "processed_data.json"
+# json_filename = "test_1processed_data.json"
 # Output JSON file
-output_filename = "ragas_scores.json"
+# output_filename = "test_1ragas_scores.json"
 
-def score_rag():
+
+def score_rag(json_filename, output_filename):
     # Load processed JSON data
     with open(json_filename, "r", encoding="utf-8") as jsonfile:
         data = json.load(jsonfile)
@@ -27,7 +27,6 @@ def score_rag():
     questions = [item["question"] for item in data]
     retrieved_contexts = [item["retrieved_contexts"] for item in data]  # Already an array of strings
     generated_responses = [item["generated_response"] for item in data]
-    gpt_response = [item["gpt_Generated_Response_withoutRAG"] for item in data]
 
     # if use_reference:
     reference_answers = [item["reference_answer"] if item["reference_answer"] else "" for item in data]
@@ -55,7 +54,6 @@ def score_rag():
         dataset=dataset,
         metrics=metrics,
         column_map=column_map,
-        llm="gpt-4o-mini"
     )
 
 
@@ -87,15 +85,23 @@ gpt_answer_score_file = "gpt_scores.json"
 
 def score_baseline():
 
+    gpt_answers = list()
+    questions = list()
+    reference_answers = list()
+    contexts = list()
+
     with open(gpt_answer_file, "r", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
+        cnt = 0
+        for row in reader:
+            if cnt == 100:
+                break
+            gpt_answers.append(row["gpt_Generated_Response"])
+            questions.append(row["Question Body"])
+            reference_answers.append(row["Answer Body"])
+            contexts.append([])
 
-    questions = [row["Question Body"] for row in reader]
-    gpt_answers = [row["gpt_Generated_Response"] for row in reader]
-    reference_answers = [row["gpt_Generated_Response"] if row["gpt_Generated_Response"] else "" for row in reader]
-
-    # Fill it with None.
-    contexts = [[] for _ in gpt_answers] 
+            cnt += 1
 
     dataset = Dataset.from_dict({
         "question": questions,
@@ -104,15 +110,20 @@ def score_baseline():
         "contexts": contexts
     })
 
-    print(questions)
+    #RAGAS requires column map:
+    column_map = {
+        "question": "question",
+        "response": "answer",  # mapping our column "generated_response" to what RAGAS expects as "response"
+        "retrieved_contexts": "contexts",
+        "reference": "ground_truth"
+    }
 
-    return
 
-    scores = evaluate(dataset, metrics=[answer_correctness], llm="gpt-4o-mini")
+    scores = evaluate(dataset=dataset, metrics=[answer_correctness], column_map=column_map)
 
     # Convert scores to a dictionary format
     scored_data = []
-    for i in range(len(scores)):
+    for i in range(len(gpt_answers)):
         entry = {
             "question": questions[i],
             "retrieved_contexts": "",
@@ -128,6 +139,9 @@ def score_baseline():
 
     print(f"RAGAS scoring completed. Output saved to {gpt_answer_score_file}")
 
+
 if __name__ == "__main__":
-    score_baseline()
-    # score_rag()
+    # score_baseline()
+    score_rag("test_3processed_data.json", "test_3_ragas_scores.json")
+    score_rag("test_4processed_data.json", "test_4_ragas_scores.json")
+    score_rag("test_5processed_data.json", "test_5_ragas_scores.json")
