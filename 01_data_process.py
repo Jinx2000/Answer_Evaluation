@@ -1,6 +1,6 @@
 import csv
 import json
-import os
+import os, re
 
 def get_file_names(directory):
     # 获取目录下的所有文件和文件夹
@@ -19,7 +19,10 @@ def data_process(csv_filename):
     json_filename = csv_filename.split(".")[0] + "processed_data.json"
     csv_filename = "./dev_data/" + csv_filename
 
-    print(csv_filename)
+    print(f"Processing: {csv_filename}")
+
+    # 判断是否为 Baseline（test_0.csv）
+    is_baseline = re.search(r'test_0\.csv$', csv_filename) is not None  # 如果文件名是 `test_0.csv`，则是 Baseline
 
     # Read CSV and convert to JSON format
     data = []
@@ -38,13 +41,16 @@ def data_process(csv_filename):
                 question = question_title  # Use title only if body is empty
 
             # Ensure retrieved contexts are formatted as an array of strings
-            retrieved_contexts = [
-                row["gpt_Top_1_Context"].strip(),
-                row["gpt_Top_2_Context"].strip(),
-                row["gpt_Top_3_Context"].strip()
-            ]
-            # Filter out empty contexts (in case some are missing)
-            retrieved_contexts = [context for context in retrieved_contexts if context]
+            if is_baseline:
+                retrieved_contexts = []  # Baseline（test_0）没有 retrieved_contexts
+            else: 
+                retrieved_contexts = [
+                    row["gpt_Top_1_Context"].strip(),
+                    row["gpt_Top_2_Context"].strip(),
+                    row["gpt_Top_3_Context"].strip()
+                ]
+                # Filter out empty contexts (in case some are missing)
+                retrieved_contexts = [context for context in retrieved_contexts if context]
 
             # Construct the JSON entry
             entry = {
@@ -69,5 +75,12 @@ if __name__ == "__main__":
     file_names = get_file_names(directory_path)
     print(file_names)
     
-    for file in file_names:
-        data_process(file)
+    # 只处理 test_0.csv
+    test_0_file = "test_0.csv"
+    
+    if test_0_file in file_names:
+        print(f"Processing only {test_0_file}...")
+        data_process(test_0_file)
+        
+    # for file in file_names:
+    #     data_process(file)
