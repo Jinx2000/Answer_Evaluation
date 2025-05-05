@@ -197,7 +197,7 @@ def plt_compare_scores():
 
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
 
-    #plt.show()
+    plt.show()
 
 plt_compare_scores()
 # cal_gpt_indicator()
