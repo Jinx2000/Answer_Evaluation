@@ -75,12 +75,12 @@ if __name__ == "__main__":
     file_names = get_file_names(directory_path)
     print(file_names)
     
-    # 只处理 test_0.csv
-    test_0_file = "test_0.csv"
+    # 只处理 test_13.csv
+    test_13_file = "newKD_test.csv"
     
-    if test_0_file in file_names:
-        print(f"Processing only {test_0_file}...")
-        data_process(test_0_file)
+    if test_13_file in file_names:
+        print(f"Processing only {test_13_file}...")
+        data_process(test_13_file)
         
     # for file in file_names:
     #     data_process(file)

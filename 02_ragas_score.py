@@ -10,7 +10,8 @@ API_KEY= "API"
 
 os.environ["http_proxy"] = "http://localhost:7890"
 os.environ["https_proxy"] = "http://localhost:7890"
-os.environ["OPENAI_API_KEY"] = API_KEY
+# os.environ["OPENAI_API_KEY"] = API_KEY
+os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
 
 
 def score_rag(json_filename, output_filename):
@@ -152,4 +153,4 @@ if __name__ == "__main__":
     # score_rag("test_6processed_data.json", "test_6_ragas_scores.json")
     # score_rag("test_7processed_data.json", "test_7_ragas_scores.json")
     # Baseline 评分
-    score_rag("test_0processed_data.json", "test_0_ragas_scores.json")
+    score_rag("newKD_testprocessed_data.json", "newKD_test_ragas_scores.json")
