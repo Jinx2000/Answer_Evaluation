@@ -5,7 +5,6 @@ import numpy as np
 from scipy.spatial.distance import cosine
 
 # Load API key from environment variable
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Function to get embeddings from OpenAI API
 def get_embedding(text):
@@ -52,14 +51,14 @@ results = []
 for index, row in df.iterrows():
     text1 = str(row["StackOverflow Answer"])  # Convert to string in case of NaN values
     text2 = str(row["Previous RAG Answer"])
-    
+
     if not text1.strip() or not text2.strip():
         similarity_score = "N/A"
         classification = "Missing Data"
     else:
         similarity_score = cosine_similarity(text1, text2)
         classification = classify_answer(similarity_score)
-    
+
     result_text = f"Similarity Score: {similarity_score:.4f}\nClassification: {classification}"
     results.append({"ID": row["ID"], "Embedding Method Result": result_text})
 

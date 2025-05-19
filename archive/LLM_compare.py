@@ -3,13 +3,12 @@ import openai
 import pandas as pd
 
 # Load API key from environment variable
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Function to get similarity reasoning from GPT-4 Turbo
 def evaluate_generated_answer(text1, text2):
     """Evaluates the model-generated answer (Text 2) against the correct StackOverflow answer (Text 1),
     providing an accuracy score and reasoning for mistakes."""
-    
+
     prompt = f"""
     <evaluation>
         <instructions>

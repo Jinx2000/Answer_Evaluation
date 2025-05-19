@@ -6,7 +6,6 @@ from bs4 import BeautifulSoup
 os.environ["http_proxy"] = "http://localhost:7890"
 os.environ["https_proxy"] = "http://localhost:7890"
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 input_csv = "input_data.csv"
 
@@ -165,7 +164,7 @@ def evaluate_RAG_answer():
         else:
             # key_points = extract_key_points_from_text1(text1)
             explanation = evaluate_generated_answer(text1, text2, key_points)
-        
+
             explanation_soup = BeautifulSoup(explanation, 'html.parser')
             accuracy_score = int(explanation_soup.find("accuracy_score").contents[0])
             if accuracy_score >= 60:

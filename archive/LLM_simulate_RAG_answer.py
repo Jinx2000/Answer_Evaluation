@@ -5,7 +5,6 @@ import pandas as pd
 os.environ["http_proxy"] = "http://localhost:7890"
 os.environ["https_proxy"] = "http://localhost:7890"
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 text = f"""
 I have a MySQL pod running in my cluster. I need to temporarily pause the pod from working without deleting it, something similar to docker where the docker stop container-id cmd will stop the container not delete the container.

@@ -8,7 +8,6 @@ from bs4 import BeautifulSoup
 # os.environ["http_proxy"] = "http://localhost:7890"
 # os.environ["https_proxy"] = "http://localhost:7890"
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 input_csv = "input_data.csv"
 # save keypoints in seperated files
@@ -106,7 +105,7 @@ def can_use_existing_keypoints(margin=10):
 # Save key points extracted from CSV
 async def save_keypoints():
     df = pd.read_csv(input_csv)
-    
+
     key_points_list_1 = []
     key_points_list_2 = []
 
@@ -118,10 +117,10 @@ async def save_keypoints():
         print("Extracting new key points for stack answers...")
         key_points_list_1 = await asyncio.gather(*[extract_key_points_from_text(str(row["Answer Body"]).strip()) for _, row in df.iterrows()])
         pd.DataFrame({"Key Points": key_points_list_1}).to_csv(keypoints_stack_csv, index=False)
-    
+
     print("Extracting new key points for RAG answers...")
     key_points_list_2 = await asyncio.gather(*[extract_key_points_from_text(str(row["gpt_Generated_Response"]).strip()) for _, row in df.iterrows()])
-    
+
     pd.DataFrame({"Key Points": key_points_list_2}).to_csv(keypoints_RAG_csv, index=False)
     print("Key point extraction completed.")
 
@@ -181,12 +180,12 @@ async def evaluate_RAG_answer():
     df_RAG = pd.read_csv(keypoints_RAG_csv)
 
     results = []
-    
+
     tasks = []
     for index, row in df.iterrows():
         key_points_stack = str(df_stack["Key Points"][index]).strip()
         key_points_RAG = str(df_RAG["Key Points"][index]).strip()
-        
+
         if not key_points_stack or not key_points_RAG:
             explanation = "Similarity Score: N/A\nReasoning: Missing Data"
             final_score = "N/A"

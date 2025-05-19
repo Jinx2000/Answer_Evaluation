@@ -2,14 +2,15 @@
 
 import os
 import re
-import openai
+from openai import OpenAI
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 import json
 from typing import List
 
 # ── Configuration ────────────────────────────────────────────────────────────────
 
 # Point to your OpenAI key however you like
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Weights for blending rule vs. NLI signals
 W_RULE = 0.4
@@ -47,12 +48,10 @@ Hypothesis (assertion):
 Question: Does the premise *entail* the hypothesis?
 Reply with exactly “Yes.” or “No.” (without extra commentary).
 """
-    resp = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role":"user", "content": prompt}],
-        temperature=0.0,
-        max_tokens=3,
-    )
+    resp = client.chat.completions.create(model="gpt-4",
+    messages=[{"role":"user", "content": prompt}],
+    temperature=0.0,
+    max_tokens=3)
     reply = resp.choices[0].message.content.strip().lower()
     return 1.0 if reply.startswith("yes") else 0.0
 
@@ -90,16 +89,16 @@ def evaluate_explanation_entry(entry: dict) -> dict:
     """
     pred  = entry.get("generated_response", "")
     facts = entry.get("assertions", [])
-    
+
     fc = assertion_coverage(pred, facts)
     ec = entailment_coverage(pred, facts)
     acc = explanation_accuracy(pred, facts)
-    
+
     entry["fact_coverage"]      = round(fc,  3)
     entry["entailment_coverage"]= round(ec,  3)
     entry["accuracy_score"]     = round(acc, 3)
     entry["auto_pass"]          = acc >= 0.75
-    
+
     return entry
 
 
@@ -112,11 +111,11 @@ def evaluate_batch(input_json: str, output_json: str):
     """
     with open(input_json, "r", encoding="utf-8") as f:
         data = json.load(f)
-    
+
     for entry in data:
         # only evaluate explanations (you can guard by entry["output_category"])
         entry = evaluate_explanation_entry(entry)
-    
+
     with open(output_json, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     print(f"→ Wrote evaluated entries to {output_json}")
