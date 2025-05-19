@@ -6,3 +6,6 @@
 
 # keep whatever there is under dev_data/
 !dev_data/*.csv
+
+# ignore env files
+.env
