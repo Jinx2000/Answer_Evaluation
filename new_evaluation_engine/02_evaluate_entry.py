@@ -142,7 +142,7 @@ Q: {question}
 A:
 """
     resp = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0,
         max_tokens=256,
@@ -175,7 +175,7 @@ Reply *only* with JSON, no extra text:
 {{"entailment": "Yes" or "No", "confidence": <float between 0 and 1>}}
 """
     resp = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0,
         max_tokens=20,
