@@ -130,101 +130,76 @@ def _safe_json_load(s: str) -> Any:
         return None
 
 # ── Hypothesis Generation ──────────────────────────────────────────────────────
-def generate_hypotheses(question: str, n: int = 3) -> List[str]:
-    import re
+from typing import List, Any
+import re
 
-    # 1) System + few‑shot with “should ensure”/“should mention” pattern
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                f"You are a Kubernetes expert and strict JSON generator. "
-                f"Always output exactly {n} statements in a JSON array. "
-                "Each statement must be at least 6 words long and start with "
-                "either “The answer should ensure” or “The answer should mention”. "
-                "Do NOT include bullets, markdown, or extra text."
-            )
-        },
-        {
-            "role": "user",
-            "content": (
-                "Example 1:\n"
-                "Q: Why does `servicename` no longer work in networking.k8s.io/v1 Ingress?\n"
-                "A: [\n"
-                '  "The answer should ensure `service.name` and `service.port.number` are used instead of servicename/serviceport.",\n'
-                '  "The answer should ensure each HTTP path has a valid `pathType` in spec.rules.",\n'
-                '  "The answer should mention that you must specify `pathType` when using networking.k8s.io/v1."\n'
-                "]\n\n"
+def generate_hypotheses(question: str, n: int = 5) -> List[str]:
+    system = {
+        "role": "system",
+        "content": (
+            f"You are a Kubernetes expert and strict JSON generator. "
+            f"Return *only* a JSON array of exactly {n} strings. "
+            "Each string must be at least six words long, start with “The answer should ensure” "
+            "or “The answer should mention”, and capture one indispensable truth. "
+            "Do NOT include bullets, markdown, or any extra text."
+        )
+    }
 
-                "Example 2:\n"
-                "Q: 413 error with kubernetes and nginx ingress controller…\n"
-                "A: [\n"
-                '  "The answer should ensure the ConfigMap uses the key `client-max-body-size` not underscores.",\n'
-                '  "The answer should ensure you add `nginx.ingress.kubernetes.io/proxy-body-size` annotation to override defaults.",\n'
-                '  "The answer should mention restarting the ingress controller pod to pick up ConfigMap changes."\n'
-                "]\n\n"
-
-                f"Now you for Q: {question}\n"
-                "A:"
-            )
-        }
-    ]
+    # 2) Few‑shot examples updated to illustrate indispensable truths
+    few_shot = {
+        "role": "user",
+        "content": (
+            "Example 1:\n"
+            "Q: Why does `servicename` no longer work in networking.k8s.io/v1 Ingress?\n"
+            "A: [\n"
+            '  "The answer should ensure the backend uses `service.name` and `service.port.number` instead of the old fields.",\n'
+            '  "The answer should mention that `pathType` is now REQUIRED for every HTTP path."\n'
+            "]\n\n"
+            "Example 2:\n"
+            "Q: How can I share files between two containers in the same Pod?\n"
+            "A: [\n"
+            '  "The answer should ensure you define a single `emptyDir` (or other) volume in the Pod spec.",\n'
+            '  "The answer should mention mounting that same volume into both containers."\n'
+            "]\n\n"
+            f"Now you for Q: {question}\n"
+            "A:"
+        )
+    }
 
     # 2) Call the model
     resp = client.chat.completions.create(
         model=EVAL_MODEL,
-        messages=messages,
+        messages=[system, few_shot],
         temperature=0.0,
         max_tokens=256,
     )
     content = resp.choices[0].message.content.strip()
 
-    # 3) Try to parse JSON
+    # 1) Strict JSON parse and count check
     arr = _safe_json_load(content)
-    if not isinstance(arr, list):
-        arr = []
+    if not isinstance(arr, list) or len(arr) != n:
+        # dump content to logs here
+        raise ValueError(f"Expected {n} items, got {len(arr)}: {content!r}")
 
-    # 4) Prepare raw fallback lines
-    raw = [
-        ln.strip(" -•`[]")
-        for ln in content.splitlines()
-        if ln.strip()
-    ]
-
-    # 5) Validator for our new prefixes
-    PREFIXES = ("the answer should ensure ", "the answer should mention ")
-    def valid(h: str) -> bool:
-        txt = h.strip()
-        low = txt.lower()
-        if len(txt.split()) < 6:
-            return False
-        return any(low.startswith(p) for p in PREFIXES)
-
-    # 6) Collect valid hypotheses
+    # 2) Filter by prefix regex
+    PREFIX_RE = re.compile(r'^The answer should (?:ensure|mention)', re.IGNORECASE)
+    def valid(h): return len(h.split()) >= 6 and bool(PREFIX_RE.match(h))
     hyps = [h.strip() for h in arr if isinstance(h, str) and valid(h)]
 
-    # 7) Top up from JSON array (still requiring valid prefix)
-    if len(hyps) < n:
-        for h in arr:
-            if isinstance(h, str) and valid(h) and h not in hyps:
-                hyps.append(h.strip())
-            if len(hyps) >= n:
-                break
+    # 3) If somehow fewer, pad only with valid raw lines
+    raw_lines = [ln.strip(" -•`[]") for ln in content.splitlines() if ln.strip()]
+    for ln in raw_lines:
+        if valid(ln) and ln not in hyps:
+            hyps.append(ln)
+        if len(hyps) == n:
+            break
 
-    # 8) Top up from raw lines (no further checks)
-    if len(hyps) < n:
-        for h in raw:
-            if h not in hyps:
-                hyps.append(h)
-            if len(hyps) >= n:
-                break
-
-    # 9) Pad with empty strings if still too few
-    while len(hyps) < n:
-        hyps.append("")
-
-    # 10) Return exactly n
+    # 4) Final pad with blank strings if still too few
+    hyps += [""] * (n - len(hyps))
     return hyps[:n]
+
+
+
 
 
 
