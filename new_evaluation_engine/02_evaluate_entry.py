@@ -6,14 +6,20 @@ from typing import List, Dict, Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
+import numpy as np
 
-# ── Setup ────────────────────────────────────────────────────────────────────────
+# ── Setup ───────────────────────────────────────────────────────────────────────
 load_dotenv()  # loads OPENAI_API_KEY from .env
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise RuntimeError("OPENAI_API_KEY is not set in your .env file!")
 
 client = OpenAI(api_key=api_key)
+
+# Load model names from environment (easy to swap without touching code)
+EVAL_MODEL = os.getenv("EVAL_MODEL", "gpt-4.1-mini")
+NLI_MODEL  = os.getenv("NLI_MODEL",  "gpt-3.5-turbo")
+
 
 # ── Few‑Shot for Hypothesis Generation ─────────────────────────────────────────
 _FEW_SHOT = [
@@ -124,67 +130,167 @@ def _safe_json_load(s: str) -> Any:
         return None
 
 # ── Hypothesis Generation ──────────────────────────────────────────────────────
-def generate_hypotheses(question: str, n: int = 5) -> List[str]:
-    # Build few‑shot block
-    shots = [f"Q: {ex['question']}\nA: {json.dumps(ex['hypotheses'])}"
-             for ex in _FEW_SHOT]
-    few_shot_block = "\n\n".join(shots)
+def generate_hypotheses(question: str, n: int = 3) -> List[str]:
+    import re
 
-    prompt = f"""
-You are a Kubernetes expert.  For each user question below, list the top {n}
-specific facts or API‑level statements that a *correct* answer *must* cover.
-Include version numbers when relevant (e.g. “Since v1.24…”).  Output **only**
-a JSON array of strings.
+    # 1) System + few‑shot with “should ensure”/“should mention” pattern
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                f"You are a Kubernetes expert and strict JSON generator. "
+                f"Always output exactly {n} statements in a JSON array. "
+                "Each statement must be at least 6 words long and start with "
+                "either “The answer should ensure” or “The answer should mention”. "
+                "Do NOT include bullets, markdown, or extra text."
+            )
+        },
+        {
+            "role": "user",
+            "content": (
+                "Example 1:\n"
+                "Q: Why does `servicename` no longer work in networking.k8s.io/v1 Ingress?\n"
+                "A: [\n"
+                '  "The answer should ensure `service.name` and `service.port.number` are used instead of servicename/serviceport.",\n'
+                '  "The answer should ensure each HTTP path has a valid `pathType` in spec.rules.",\n'
+                '  "The answer should mention that you must specify `pathType` when using networking.k8s.io/v1."\n'
+                "]\n\n"
 
-{few_shot_block}
+                "Example 2:\n"
+                "Q: 413 error with kubernetes and nginx ingress controller…\n"
+                "A: [\n"
+                '  "The answer should ensure the ConfigMap uses the key `client-max-body-size` not underscores.",\n'
+                '  "The answer should ensure you add `nginx.ingress.kubernetes.io/proxy-body-size` annotation to override defaults.",\n'
+                '  "The answer should mention restarting the ingress controller pod to pick up ConfigMap changes."\n'
+                "]\n\n"
 
-Q: {question}
-A:
-"""
+                f"Now you for Q: {question}\n"
+                "A:"
+            )
+        }
+    ]
+
+    # 2) Call the model
     resp = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
+        model=EVAL_MODEL,
+        messages=messages,
         temperature=0.0,
         max_tokens=256,
     )
     content = resp.choices[0].message.content.strip()
-    arr = _safe_json_load(content)
 
-    if isinstance(arr, list) and all(isinstance(x, str) for x in arr):
-        return arr[:n]
-    # fallback
-    lines = [l.strip(" -•123.") for l in content.splitlines() if l.strip()]
-    return lines[:n]
+    # 3) Try to parse JSON
+    arr = _safe_json_load(content)
+    if not isinstance(arr, list):
+        arr = []
+
+    # 4) Prepare raw fallback lines
+    raw = [
+        ln.strip(" -•`[]")
+        for ln in content.splitlines()
+        if ln.strip()
+    ]
+
+    # 5) Validator for our new prefixes
+    PREFIXES = ("the answer should ensure ", "the answer should mention ")
+    def valid(h: str) -> bool:
+        txt = h.strip()
+        low = txt.lower()
+        if len(txt.split()) < 6:
+            return False
+        return any(low.startswith(p) for p in PREFIXES)
+
+    # 6) Collect valid hypotheses
+    hyps = [h.strip() for h in arr if isinstance(h, str) and valid(h)]
+
+    # 7) Top up from JSON array (still requiring valid prefix)
+    if len(hyps) < n:
+        for h in arr:
+            if isinstance(h, str) and valid(h) and h not in hyps:
+                hyps.append(h.strip())
+            if len(hyps) >= n:
+                break
+
+    # 8) Top up from raw lines (no further checks)
+    if len(hyps) < n:
+        for h in raw:
+            if h not in hyps:
+                hyps.append(h)
+            if len(hyps) >= n:
+                break
+
+    # 9) Pad with empty strings if still too few
+    while len(hyps) < n:
+        hyps.append("")
+
+    # 10) Return exactly n
+    return hyps[:n]
+
+
+
+
+
 
 # ── Hypothesis Evaluation via NLI ───────────────────────────────────────────────
 def evaluate_hypothesis_nli(premise: str, hypothesis: str) -> Dict[str, Any]:
-    prompt = f"""
-You are a Kubernetes expert.
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a strict Kubernetes fact‑checker. "
+                "Given a piece of text and a single claim, decide if the text fully supports the claim. "
+                "Respond ONLY with JSON in this exact format: "
+                '{"entailment":"Yes" or "No","confidence":<float between 0 and 1>}.'
+            )
+        },
+        {
+            "role": "user",
+            "content": f"""
+            Example 1:
+            Premise:
+            \"\"\"
+            Pods consume ConfigMaps via envFrom and volumes.
+            \"\"\"
+            Claim:
+            \"Pods automatically reload when a ConfigMap changes.\"
+            Response: {{"entailment":"No","confidence":0.90}}
 
-Premise:
-\"\"\"
-{premise}
-\"\"\"
+            Example 2:
+            Premise:
+            \"\"\"
+            The Ingress spec.rules[].http.pathType must be Exact, Prefix, or ImplementationSpecific.
+            \"\"\"
+            Claim:
+            \"`pathType` is a required field.\"
+            Response: {{"entailment":"Yes","confidence":0.95}}
 
-Hypothesis:
-\"{hypothesis}\"
+            Now evaluate the following:
 
-Question: Does the premise *entail* the hypothesis?
-Reply *only* with JSON, no extra text:
+            Premise:
+            \"\"\"
+            {premise}
+            \"\"\"
 
-{{"entailment": "Yes" or "No", "confidence": <float between 0 and 1>}}
-"""
+            Claim:
+            \"{hypothesis}\"
+
+            Is the claim fully supported by the premise? Reply only with the JSON.
+            """
+        }
+    ]
+
     resp = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
+        model=NLI_MODEL,
+        messages=messages,
         temperature=0.0,
-        max_tokens=20,
+        max_tokens=50,
     )
     out = resp.choices[0].message.content.strip()
     data = _safe_json_load(out) or {}
     ent = str(data.get("entailment", "No")).lower().startswith("y")
     conf = float(data.get("confidence", 0.0))
     return {"entailment": ent, "confidence": conf}
+
 
 def evaluate_hypotheses(answer: str, hypotheses: List[str]) -> List[Dict[str, Any]]:
     return [
@@ -198,63 +304,90 @@ def evaluate_hypotheses(answer: str, hypotheses: List[str]) -> List[Dict[str, An
 def evaluate_entry(entry: dict) -> dict:
     q, a = entry["question"], entry["generated_response"]
 
-    # 1) Generate hypotheses
+    # Step 1: Generate hypotheses
     hyps = generate_hypotheses(q, n=3)
 
-    # 1a) Fallback: if none of the hypotheses share any tokens with the question,
-    # mark as incorrect immediately
-    filtered = [h for h in hyps if _overlaps(q, h)]
+    # Step 2: Filter out non-lexical hypotheses
+    filtered = [h for h in hyps if _overlaps(q, h) and len(h.split()) > 4]
     if not filtered:
-        entry["hypotheses"] = hyps
-        entry["hypotheses_evaluations"] = []
-        entry["fallback_used"] = True
-        entry["is_correct"] = False
-        entry["confidence_score"] = 0.0
+        entry.update({
+            "hypotheses": hyps,
+            "hypotheses_evaluations": [],
+            "fallback_used": True,
+            "is_correct": False,
+            "confidence_score": 0.0
+        })
         return entry
+
     hyps = filtered
 
-    # 2) Evaluate each hypothesis via NLI
+    # Step 3: Evaluate each hypothesis via NLI
     hyp_evals = evaluate_hypotheses(a, hyps)
-
-    # 3) Meta‑check: does the answer fully address the question?
-    meta_hyp = "The provided answer correctly and completely answers the user's question."
-    meta_ev = evaluate_hypothesis_nli(a, meta_hyp)
-    meta_pass = meta_ev["entailment"] and meta_ev["confidence"] >= 0.7
-
-    # 4) k‑of‑n coverage: require at least 2 of 3 hypotheses to pass
     passed = sum(e["entailment"] for e in hyp_evals)
-    cov_pass = (passed >= 2)
 
-    # 5) Final correctness flag
-    entry["is_correct"] = bool(meta_pass and cov_pass)
-    entry["fallback_used"] = False
+    # Step 4: Dynamic threshold: majority of evaluated hypotheses must pass
+    needed = max(1, len(hyp_evals) // 2 + 1)
+    is_correct = passed >= needed
 
-    # 6) Blended confidence score (50% meta, 50% hypothesis average)
-    meta_w = 0.5
-    hyp_w = 0.5 / len(hyp_evals)
-    blended = meta_w * meta_ev["confidence"] + sum(e["confidence"] * hyp_w for e in hyp_evals)
-    entry["confidence_score"] = round(blended, 3)
+    # Step 5: Blended confidence (only count passing ones)
+    pass_confs = [e["confidence"] for e in hyp_evals if e["entailment"]]
+    conf_score = round(float(np.mean(pass_confs)), 3) if pass_confs else 0.0
 
-    # 7) Keep diagnostics
-    entry["hypotheses"] = hyps
-    entry["hypotheses_evaluations"] = hyp_evals
+    # Step 6: Update entry
+    entry.update({
+        "hypotheses": hyps,
+        "hypotheses_evaluations": hyp_evals,
+        "fallback_used": False,
+        "is_correct": is_correct,
+        "confidence_score": conf_score
+    })
 
     return entry
 
 
-def evaluate_all(input_path: str, output_path: str):
+
+
+
+
+
+import json
+import os
+
+def evaluate_all(input_path: str, output_path: str, debug_path: str = None):
     with open(input_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     out = []
-    for idx, ent in enumerate(data, 1):
+    debug_cases = []
+
+    for idx, ent in enumerate(data[:150], 1):
         print(f"[{idx}/{len(data)}] {ent['question'][:50]}...")
-        out.append(evaluate_entry(ent))
+        result = evaluate_entry(ent)
+        out.append(result)
+
+        # Collect any “unlikely” cases for debugging:
+        if not result["is_correct"] or result["confidence_score"] < 0.5:
+            debug_cases.append({
+                "question": ent["question"],
+                "answer":   ent["generated_response"],
+                "is_correct": result["is_correct"],
+                "confidence_score": result["confidence_score"],
+                "hypotheses": result["hypotheses"],
+                "hypotheses_evaluations": result["hypotheses_evaluations"],
+            })
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)
-    print(f"✅ Wrote {len(out)} entries to {output_path}")
+    print(f"Wrote {len(out)} entries to {output_path}")
+
+    # Dump debug cases if path given
+    if debug_path:
+        os.makedirs(os.path.dirname(debug_path), exist_ok=True)
+        with open(debug_path, "w", encoding="utf-8") as f:
+            json.dump(debug_cases, f, indent=2, ensure_ascii=False)
+        print(f" Wrote {len(debug_cases)} debug cases to {debug_path}")
+
 
 
 # ── Utilities ──────────────────────────────────────────────────────────────────
@@ -279,5 +412,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Strict NLI‑based evaluator")
     p.add_argument("--input",  "-i", required=True, help="Processed JSON input")
     p.add_argument("--output", "-o", required=True, help="Evaluated JSON output")
+    p.add_argument("--debug", required=False, help="Path to debug output (e.g. misclassified entries)")
     args = p.parse_args()
-    evaluate_all(args.input, args.output)
+    evaluate_all(args.input, args.output, args.debug)
