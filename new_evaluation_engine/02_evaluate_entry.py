@@ -137,11 +137,13 @@ def generate_hypotheses(question: str, n: int = 5) -> List[str]:
     system = {
         "role": "system",
         "content": (
-            f"You are a Kubernetes expert and strict JSON generator. "
-            f"Return *only* a JSON array of exactly {n} strings. "
-            "Each string must be at least six words long, start with “The answer should ensure” "
-            "or “The answer should mention”, and capture one indispensable truth. "
-            "Do NOT include bullets, markdown, or any extra text."
+            "You are a Kubernetes expert and a strict JSON generator. "
+            "You will receive both a user question and a reference answer (the correct YAML snippet and explanation). "
+            "Your job is to look at the reference answer, pull out exactly N indispensable truths from it, "
+            "and return only a JSON array of N strings. "
+            "Each string must be at least six words long, start with “The answer should ensure” or “The answer should mention,” "
+            "and reflect a fact that appears in the reference answer. "
+            "Do NOT invent anything that isn’t in the reference answer, do not add bullets or markdown, and do not include any extra text."
         )
     }
 
@@ -175,18 +177,14 @@ def generate_hypotheses(question: str, n: int = 5) -> List[str]:
     )
     content = resp.choices[0].message.content.strip()
 
-    # 1) Strict JSON parse and count check
     arr = _safe_json_load(content)
     if not isinstance(arr, list) or len(arr) != n:
-        # dump content to logs here
         raise ValueError(f"Expected {n} items, got {len(arr)}: {content!r}")
 
-    # 2) Filter by prefix regex
     PREFIX_RE = re.compile(r'^The answer should (?:ensure|mention)', re.IGNORECASE)
     def valid(h): return len(h.split()) >= 6 and bool(PREFIX_RE.match(h))
     hyps = [h.strip() for h in arr if isinstance(h, str) and valid(h)]
 
-    # 3) If somehow fewer, pad only with valid raw lines
     raw_lines = [ln.strip(" -•`[]") for ln in content.splitlines() if ln.strip()]
     for ln in raw_lines:
         if valid(ln) and ln not in hyps:
@@ -194,7 +192,6 @@ def generate_hypotheses(question: str, n: int = 5) -> List[str]:
         if len(hyps) == n:
             break
 
-    # 4) Final pad with blank strings if still too few
     hyps += [""] * (n - len(hyps))
     return hyps[:n]
 
@@ -280,7 +277,7 @@ def evaluate_entry(entry: dict) -> dict:
     q, a = entry["question"], entry["generated_response"]
 
     # Step 1: Generate hypotheses
-    hyps = generate_hypotheses(q, n=3)
+    hyps = generate_hypotheses(q, n=5)
 
     # Step 2: Filter out non-lexical hypotheses
     filtered = [h for h in hyps if _overlaps(q, h) and len(h.split()) > 4]
@@ -335,7 +332,7 @@ def evaluate_all(input_path: str, output_path: str, debug_path: str = None):
     out = []
     debug_cases = []
 
-    for idx, ent in enumerate(data[:150], 1):
+    for idx, ent in enumerate(data, 1):
         print(f"[{idx}/{len(data)}] {ent['question'][:50]}...")
         result = evaluate_entry(ent)
         out.append(result)
