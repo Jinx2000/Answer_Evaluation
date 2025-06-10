@@ -26,7 +26,7 @@ NOTE: Make sure you adjust the input and output JSONs appropriately.
 
 python new_evaluation_engine/01_data_process.py
 
-python new_evaluation_engine/02_evaluate_entries.py \
+python new_evaluation_engine/02_evaluate_entry.py \
   --input processed_data/test_verification_results_v1_processed.json \
   --output evaluated/test_verification_results_v1_evaluated.json
 

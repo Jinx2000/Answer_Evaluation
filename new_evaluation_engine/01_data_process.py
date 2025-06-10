@@ -10,32 +10,40 @@ def get_file_names(directory):
     return file_names
 
 def categorize_response(response: str) -> str:
-    # 1) Find fenced blocks
-    fences = re.findall(r"```(?:yaml)?\n(.*?)```", response, flags=re.DOTALL)
-    if fences:
-        # Count code vs. text in the first fence
-        code_lines = sum(1 for line in fences[0].splitlines() if ":" in line)
-        total_lines = len(fences[0].splitlines())
-        if code_lines / max(total_lines,1) > 0.5:
-            return "YAML"
-        else:
-            return "YAML"
-
-    # 2) Fallback to multi‑line key:value detection
-    kv_lines = re.findall(r"^[ \t]*[A-Za-z0-9_-]+:\s+.*$", response, flags=re.MULTILINE)
-    if len(kv_lines) >= 3:
+    if "apiVersion:" in response and "kind:" in response:
         return "YAML"
-
-    # 3) CLI detection
-    if (
-        re.search(r"(?m)^(?:\$|>)\s*\S+", response) or
-        re.search(r"\b(?:kubectl|helm|docker|git|aws|oc)\s+\S+", response) or
-        re.search(r"\s&&\s|\s\|\s", response)
-    ):
+    if any(cmd in response for cmd in ["kubectl", "helm", "docker"]):
         return "CLI"
+    return "YAML"  # Default to YAML instead of Explanation
 
-    # 4) Everything else
-    return "Explanation"
+
+# def categorize_response(response: str) -> str:
+#     # 1) Find fenced blocks
+#     fences = re.findall(r"```(?:yaml)?\n(.*?)```", response, flags=re.DOTALL)
+#     if fences:
+#         # Count code vs. text in the first fence
+#         code_lines = sum(1 for line in fences[0].splitlines() if ":" in line)
+#         total_lines = len(fences[0].splitlines())
+#         if code_lines / max(total_lines,1) > 0.5:
+#             return "YAML"
+#         else:
+#             return "YAML"
+
+#     # 2) Fallback to multi‑line key:value detection
+#     kv_lines = re.findall(r"^[ \t]*[A-Za-z0-9_-]+:\s+.*$", response, flags=re.MULTILINE)
+#     if len(kv_lines) >= 3:
+#         return "YAML"
+
+#     # 3) CLI detection
+#     if (
+#         re.search(r"(?m)^(?:\$|>)\s*\S+", response) or
+#         re.search(r"\b(?:kubectl|helm|docker|git|aws|oc)\s+\S+", response) or
+#         re.search(r"\s&&\s|\s\|\s", response)
+#     ):
+#         return "CLI"
+
+#     # 4) Everything else
+#     return "Explanation"
 
 
 

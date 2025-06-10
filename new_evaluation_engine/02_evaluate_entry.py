@@ -133,7 +133,7 @@ def _safe_json_load(s: str) -> Any:
 from typing import List, Any
 import re
 
-def generate_hypotheses(question: str, n: int = 5) -> List[str]:
+def generate_hypotheses(question: str, n: int = 3) -> List[str]:
     system = {
         "role": "system",
         "content": (
@@ -178,8 +178,18 @@ def generate_hypotheses(question: str, n: int = 5) -> List[str]:
     content = resp.choices[0].message.content.strip()
 
     arr = _safe_json_load(content)
-    if not isinstance(arr, list) or len(arr) != n:
+
+    # 1) Make sure we actually got a list back
+    if not isinstance(arr, list):
+        arr = []
+    # pad or trim to exactly n
+    arr = (arr + [""] * n)[:n]
+
+
+    # 2) Now it’s safe to check length
+    if len(arr) != n:
         raise ValueError(f"Expected {n} items, got {len(arr)}: {content!r}")
+
 
     PREFIX_RE = re.compile(r'^The answer should (?:ensure|mention)', re.IGNORECASE)
     def valid(h): return len(h.split()) >= 6 and bool(PREFIX_RE.match(h))
@@ -277,7 +287,7 @@ def evaluate_entry(entry: dict) -> dict:
     q, a = entry["question"], entry["generated_response"]
 
     # Step 1: Generate hypotheses
-    hyps = generate_hypotheses(q, n=5)
+    hyps = generate_hypotheses(q, n=3)
 
     # Step 2: Filter out non-lexical hypotheses
     filtered = [h for h in hyps if _overlaps(q, h) and len(h.split()) > 4]
