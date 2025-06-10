@@ -1,399 +1,210 @@
-# evaluator.py
+#!/usr/bin/env python3
 import os
+import re
 import json
-import re
-from typing import List, Dict, Any
+import textwrap
+from typing import Any, Dict, List, Optional, Set
 
-from dotenv import load_dotenv
-from openai import OpenAI
-import numpy as np
+import yaml
 
-# ── Setup ───────────────────────────────────────────────────────────────────────
-load_dotenv()  # loads OPENAI_API_KEY from .env
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    raise RuntimeError("OPENAI_API_KEY is not set in your .env file!")
+# ── Configuration ───────────────────────────────────────────────────────────────
+PASS_THRESHOLD = {
+    'yaml': 80.0,         # require 80% of fields (and no value mismatches)
+    'cli': 80.0,          # require 80% of flags
+    'explanation': 50.0   # require 50% of key names
+}
+SAMPLE_SIZE: Optional[int] = None  # set to 10 to test only first 10 entries
 
-client = OpenAI(api_key=api_key)
+# Keys to ignore when comparing YAML fields
+IGNORE_KEYS = {
+    'metadata.creationTimestamp',
+    'metadata.resourceVersion',
+    'metadata.uid'
+}
 
-# Load model names from environment (easy to swap without touching code)
-EVAL_MODEL = os.getenv("EVAL_MODEL", "gpt-4.1-mini")
-NLI_MODEL  = os.getenv("NLI_MODEL",  "gpt-3.5-turbo")
-
-
-# ── Few‑Shot for Hypothesis Generation ─────────────────────────────────────────
-_FEW_SHOT = [
-    {
-        "question": "Why does `servicename` no longer work in networking.k8s.io/v1 Ingress?",
-        "hypotheses": [
-            "In networking.k8s.io/v1, the Ingress `backend` block must use `service.name` and `service.port.number` instead of `serviceName`/`servicePort`",
-            "`pathType` is a required field (Exact, Prefix, or ImplementationSpecific) for each HTTP path under `spec.rules`",
-            "The `ingressClassName` or default IngressClass must match the controller watching the resource"
-        ]
-    },
-    {
-        "question": "How do I expose multiple container ports on a single Kubernetes Service?",
-        "hypotheses": [
-            "A Service `spec.ports` list can contain multiple entries each with `name`, `port`, and `targetPort`",
-            "Each port entry must have a unique `name` and the Service `selector` labels must match the Pod labels for routing",
-            "To expose externally, Service `type` must be `NodePort` or `LoadBalancer` so that nodePorts or LB IPs are allocated"
-        ]
-    },
-    {
-        "question": "My PersistentVolumeClaim is stuck in Pending state. What must be true?",
-        "hypotheses": [
-            "The PVC `spec.storageClassName` must reference a StorageClass that exists and supports dynamic provisioning",
-            "The PVC `spec.accessModes` must match those offered by available PersistentVolumes",
-            "The PVC `spec.resources.requests.storage` must be less than or equal to the capacity of a matching PV"
-        ]
-    },
-    {
-        "question": "ConfigMap updates are not taking effect in my pods. What must be checked?",
-        "hypotheses": [
-            "Pods consume ConfigMaps via `envFrom`, `env`+`configMapKeyRef`, or as a volume under `spec.template.spec.volumes` & `volumeMounts`",
-            "ConfigMap changes require Pods to be restarted (or use a sidecar/reloader) unless mounted without `subPath` for auto‑reload",
-            "The Deployment/statefulset Pod template must reference the correct ConfigMap name under `spec.template.spec`"
-        ]
-    },
-    {
-        "question": "Liveness and readiness probes are failing in my Deployment. What fields must be correct?",
-        "hypotheses": [
-            "Each probe must specify a valid `httpGet` (with `path` and `port`) or an `exec` command that succeeds inside the container",
-            "`initialDelaySeconds`, `periodSeconds`, `failureThreshold`, and `successThreshold` must be tuned to your app’s startup/healthcheck behavior",
-            "The probe `port` must match a container port declared under `containers[].ports`, or be given as a literal number"
-        ]
-    },
-    {
-        "question": "How do I grant a user admin access via RBAC in Kubernetes?",
-        "hypotheses": [
-            "A ClusterRole or Role with the desired verbs and resources must exist under `apiVersion: rbac.authorization.k8s.io/v1`",
-            "A ClusterRoleBinding or RoleBinding must reference that Role/ClusterRole in `roleRef` and the user in `subjects`",
-            "The binding manifest must include `kind: ClusterRoleBinding` (or RoleBinding), `apiVersion: rbac.authorization.k8s.io/v1`, and valid `metadata.name`"
-        ]
-    },
-    {
-        "question": "Why are ServiceAccount token secrets not auto-generated in Kubernetes 1.24+?",
-        "hypotheses": [
-            "The `legacyServiceAccountTokenNoAutoGeneration` feature gate is enabled by default, disabling auto‑creation of token secrets",
-            "You must use the TokenRequest API (`kubectl create token <sa-name>` in v1.24+) or manually create a Secret of type `kubernetes.io/service-account-token`",
-            "That Secret must live in the same namespace as the ServiceAccount and include an annotation `kubernetes.io/service-account.name: <sa-name>`"
-        ]
-    },
-    {
-        "question": "How can I mount a ConfigMap as files inside a Pod?",
-        "hypotheses": [
-            "The ConfigMap must be declared under `spec.volumes` with `configMap.name` referencing the ConfigMap resource",
-            "Each file mount requires a corresponding entry in the container’s `volumeMounts` pointing to the volume name and `mountPath`",
-            "You can control individual keys via the `items` field to map specific configMap keys to specific file names"
-        ]
-    },
-    {
-        "question": "What is the difference between `hostPath` and `emptyDir` volumes?",
-        "hypotheses": [
-            "`hostPath` mounts a directory or file from the host node’s filesystem into the Pod",
-            "`emptyDir` provisions an ephemeral directory that lives as long as the Pod does and is node-local",
-            "`hostPath` can be dangerous for portability and multi‑tenant safety, while `emptyDir` is safe but ephemeral"
-        ]
-    },
-    {
-        "question": "How do I limit resource usage for a container in Kubernetes?",
-        "hypotheses": [
-            "You must set `resources.requests` and/or `resources.limits` under the container spec",
-            "`requests` define the guaranteed minimum and `limits` define the maximum allowed CPU/memory",
-            "The scheduler uses `requests` to place Pods, and the kube‑let enforces `limits` at runtime"
-        ]
-    },
-    {
-        "question": "How can I run a Job once and only once in Kubernetes?",
-        "hypotheses": [
-            "Use `kind: Job` with `spec.template.spec.restartPolicy: OnFailure` or `Never`",
-            "Set `spec.backoffLimit` to control the number of retries upon failure",
-            "Once the Job’s `.status.succeeded` equals `.spec.completions`, no further Pods will be created"
-        ]
-    },
-    {
-        "question": "What’s the proper way to update a Deployment without downtime?",
-        "hypotheses": [
-            "Use `spec.strategy.type: RollingUpdate` with sensible `maxSurge` and `maxUnavailable` values",
-            "Don’t delete Pods manually—allow the controller to spin up new ones before terminating old ones",
-            "Verify readiness probes so that new Pods are only considered ready (and serve traffic) once healthy"
-        ]
-    }
-]
+# Optional synonyms for explanation matching
+SYNONYMS = {
+    'svc': ['service'],
+    'ingressclass': ['ingressClassName', 'ingressClass'],
+    'pv': ['persistentVolume', 'persistentvolumeclaim'],
+    # add more as needed
+}
 
 
-# ── Utilities ──────────────────────────────────────────────────────────────────
-def _safe_json_load(s: str) -> Any:
+def extract_fields_and_values(
+    obj: Any, base: str = '', paths: Dict[str, Any] = None
+) -> Dict[str, Any]:
+    if paths is None:
+        paths = {}
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            prefix = f'{base}.{k}' if base else k
+            extract_fields_and_values(v, prefix, paths)
+    elif isinstance(obj, list):
+        for item in obj:
+            prefix = f'{base}[*]'
+            extract_fields_and_values(item, prefix, paths)
+    else:
+        if isinstance(obj, (str, int, float, bool)):
+            paths[base] = obj
+    return paths
+
+
+def load_yaml_fields(yaml_text: str) -> Dict[str, Any]:
+    # Strip fences and dedent
+    yaml_text = re.sub(r'^```(?:yaml)?\s*|```\s*$', '', yaml_text.strip(), flags=re.MULTILINE)
+    yaml_text = textwrap.dedent(yaml_text).strip()
     try:
-        return json.loads(s)
-    except json.JSONDecodeError:
-        return None
+        docs = yaml.safe_load_all(yaml_text)
+        fields: Dict[str, Any] = {}
+        for doc in docs:
+            if doc is not None:
+                fields.update(extract_fields_and_values(doc))
+        return fields
+    except yaml.YAMLError:
+        # Fallback: only top-level keys
+        keys = re.findall(r'^[ \t]*([A-Za-z0-9_-]+):', yaml_text, re.MULTILINE)
+        return {k: None for k in set(keys)}
 
-# ── Hypothesis Generation ──────────────────────────────────────────────────────
-from typing import List, Any
-import re
 
-def generate_hypotheses(question: str, n: int = 3) -> List[str]:
-    system = {
-        "role": "system",
-        "content": (
-            "You are a Kubernetes expert and a strict JSON generator. "
-            "You will receive both a user question and a reference answer (the correct YAML snippet and explanation). "
-            "Your job is to look at the reference answer, pull out exactly N indispensable truths from it, "
-            "and return only a JSON array of N strings. "
-            "Each string must be at least six words long, start with “The answer should ensure” or “The answer should mention,” "
-            "and reflect a fact that appears in the reference answer. "
-            "Do NOT invent anything that isn’t in the reference answer, do not add bullets or markdown, and do not include any extra text."
-        )
+def extract_cli_flags(text: str) -> Set[str]:
+    return set(re.findall(r'--[A-Za-z0-9\-]+(?:=[^\s]+)?', text))
+
+
+def evaluate_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    reference = entry.get('reference_answer', '') or ''
+    generated = entry.get('generated_response', '') or ''
+    category = entry.get('output_category', 'explanation').lower()
+
+    # 1) Build reference field map
+    m_ref = re.search(r'```(?:yaml)?\s*\n(.*?)```', reference, re.DOTALL)
+    ref_yaml = m_ref.group(1) if m_ref else reference
+    ref_map = load_yaml_fields(ref_yaml)
+
+    # Prune unwanted and deeply nested keys
+    ref_keys = {
+        k for k in ref_map.keys()
+        if k not in IGNORE_KEYS and k.count('.') <= 2
     }
 
-    # 2) Few‑shot examples updated to illustrate indispensable truths
-    few_shot = {
-        "role": "user",
-        "content": (
-            "Example 1:\n"
-            "Q: Why does `servicename` no longer work in networking.k8s.io/v1 Ingress?\n"
-            "A: [\n"
-            '  "The answer should ensure the backend uses `service.name` and `service.port.number` instead of the old fields.",\n'
-            '  "The answer should mention that `pathType` is now REQUIRED for every HTTP path."\n'
-            "]\n\n"
-            "Example 2:\n"
-            "Q: How can I share files between two containers in the same Pod?\n"
-            "A: [\n"
-            '  "The answer should ensure you define a single `emptyDir` (or other) volume in the Pod spec.",\n'
-            '  "The answer should mention mounting that same volume into both containers."\n'
-            "]\n\n"
-            f"Now you for Q: {question}\n"
-            "A:"
-        )
+    result = {
+        'coverage_percent': 0.0,
+        'missing': [],
+        'value_errors': [],
+        'pass': False
     }
 
-    # 2) Call the model
-    resp = client.chat.completions.create(
-        model=EVAL_MODEL,
-        messages=[system, few_shot],
-        temperature=0.0,
-        max_tokens=256,
-    )
-    content = resp.choices[0].message.content.strip()
+    if ref_keys:
+        matched: Set[str]
+        missing: List[str]
+        value_errors: List[Dict[str, Any]] = []
 
-    arr = _safe_json_load(content)
+        if category == 'yaml':
+            # YAML branch
+            m_gen = re.search(r'```(?:yaml)?\s*\n(.*?)```', generated, re.DOTALL)
+            gen_yaml = m_gen.group(1) if m_gen else generated
+            gen_map = load_yaml_fields(gen_yaml)
 
-    # 1) Make sure we actually got a list back
-    if not isinstance(arr, list):
-        arr = []
-    # pad or trim to exactly n
-    arr = (arr + [""] * n)[:n]
+            # Prune gen_keys similarly
+            gen_keys = {
+                k for k in gen_map.keys()
+                if k not in IGNORE_KEYS and k.count('.') <= 2
+            }
 
+            matched = ref_keys & gen_keys
+            missing = sorted(ref_keys - gen_keys)
 
-    # 2) Now it’s safe to check length
-    if len(arr) != n:
-        raise ValueError(f"Expected {n} items, got {len(arr)}: {content!r}")
+            for k in matched:
+                if ref_map.get(k) != gen_map.get(k):
+                    value_errors.append({
+                        'key': k,
+                        'expected': ref_map.get(k),
+                        'got': gen_map.get(k)
+                    })
 
+        elif category == 'cli':
+            # CLI branch
+            ref_flags = extract_cli_flags(reference)
+            gen_flags = extract_cli_flags(generated)
 
-    PREFIX_RE = re.compile(r'^The answer should (?:ensure|mention)', re.IGNORECASE)
-    def valid(h): return len(h.split()) >= 6 and bool(PREFIX_RE.match(h))
-    hyps = [h.strip() for h in arr if isinstance(h, str) and valid(h)]
+            if not ref_flags:
+                # fallback to explanation
+                category = 'explanation'
+            else:
+                matched = ref_flags & gen_flags
+                missing = sorted(ref_flags - gen_flags)
+                value_errors = []
 
-    raw_lines = [ln.strip(" -•`[]") for ln in content.splitlines() if ln.strip()]
-    for ln in raw_lines:
-        if valid(ln) and ln not in hyps:
-            hyps.append(ln)
-        if len(hyps) == n:
-            break
+        if category == 'explanation':
+            # Explanation branch
+            ref_names = {k.split('.')[-1] for k in ref_keys}
+            matched = set()
+            for name in ref_names:
+                # check name or synonyms
+                patterns = [name] + SYNONYMS.get(name.lower(), [])
+                for pat in patterns:
+                    if re.search(rf'\b{re.escape(pat)}\b', generated, re.IGNORECASE):
+                        matched.add(name)
+                        break
+            missing = sorted(ref_names - matched)
+            value_errors = []
 
-    hyps += [""] * (n - len(hyps))
-    return hyps[:n]
+        # Compute coverage and pass/fail
+        coverage = 100.0 * len(matched) / len(ref_keys)
+        threshold = PASS_THRESHOLD.get(category, PASS_THRESHOLD['explanation'])
+        passed = coverage >= threshold
+        # In YAML, require no value_errors
+        if category == 'yaml' and value_errors:
+            passed = False
 
-
-
-
-
-
-
-
-
-# ── Hypothesis Evaluation via NLI ───────────────────────────────────────────────
-def evaluate_hypothesis_nli(premise: str, hypothesis: str) -> Dict[str, Any]:
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a strict Kubernetes fact‑checker. "
-                "Given a piece of text and a single claim, decide if the text fully supports the claim. "
-                "Respond ONLY with JSON in this exact format: "
-                '{"entailment":"Yes" or "No","confidence":<float between 0 and 1>}.'
-            )
-        },
-        {
-            "role": "user",
-            "content": f"""
-            Example 1:
-            Premise:
-            \"\"\"
-            Pods consume ConfigMaps via envFrom and volumes.
-            \"\"\"
-            Claim:
-            \"Pods automatically reload when a ConfigMap changes.\"
-            Response: {{"entailment":"No","confidence":0.90}}
-
-            Example 2:
-            Premise:
-            \"\"\"
-            The Ingress spec.rules[].http.pathType must be Exact, Prefix, or ImplementationSpecific.
-            \"\"\"
-            Claim:
-            \"`pathType` is a required field.\"
-            Response: {{"entailment":"Yes","confidence":0.95}}
-
-            Now evaluate the following:
-
-            Premise:
-            \"\"\"
-            {premise}
-            \"\"\"
-
-            Claim:
-            \"{hypothesis}\"
-
-            Is the claim fully supported by the premise? Reply only with the JSON.
-            """
-        }
-    ]
-
-    resp = client.chat.completions.create(
-        model=NLI_MODEL,
-        messages=messages,
-        temperature=0.0,
-        max_tokens=50,
-    )
-    out = resp.choices[0].message.content.strip()
-    data = _safe_json_load(out) or {}
-    ent = str(data.get("entailment", "No")).lower().startswith("y")
-    conf = float(data.get("confidence", 0.0))
-    return {"entailment": ent, "confidence": conf}
-
-
-def evaluate_hypotheses(answer: str, hypotheses: List[str]) -> List[Dict[str, Any]]:
-    return [
-        {
-            "hypothesis": h,
-            **evaluate_hypothesis_nli(answer, h)
-        }
-        for h in hypotheses
-    ]
-
-def evaluate_entry(entry: dict) -> dict:
-    q, a = entry["question"], entry["generated_response"]
-
-    # Step 1: Generate hypotheses
-    hyps = generate_hypotheses(q, n=3)
-
-    # Step 2: Filter out non-lexical hypotheses
-    filtered = [h for h in hyps if _overlaps(q, h) and len(h.split()) > 4]
-    if not filtered:
-        entry.update({
-            "hypotheses": hyps,
-            "hypotheses_evaluations": [],
-            "fallback_used": True,
-            "is_correct": False,
-            "confidence_score": 0.0
+        result.update({
+            'coverage_percent': round(coverage, 1),
+            'missing': missing,
+            'value_errors': value_errors,
+            'pass': passed
         })
-        return entry
 
-    hyps = filtered
-
-    # Step 3: Evaluate each hypothesis via NLI
-    hyp_evals = evaluate_hypotheses(a, hyps)
-    passed = sum(e["entailment"] for e in hyp_evals)
-
-    # Step 4: Dynamic threshold: majority of evaluated hypotheses must pass
-    needed = max(1, len(hyp_evals) // 2 + 1)
-    is_correct = passed >= needed
-
-    # Step 5: Blended confidence (only count passing ones)
-    pass_confs = [e["confidence"] for e in hyp_evals if e["entailment"]]
-    conf_score = round(float(np.mean(pass_confs)), 3) if pass_confs else 0.0
-
-    # Step 6: Update entry
-    entry.update({
-        "hypotheses": hyps,
-        "hypotheses_evaluations": hyp_evals,
-        "fallback_used": False,
-        "is_correct": is_correct,
-        "confidence_score": conf_score
-    })
-
+    entry.update(result)
     return entry
 
 
-
-
-
-
-
-import json
-import os
-
-def evaluate_all(input_path: str, output_path: str, debug_path: str = None):
-    with open(input_path, "r", encoding="utf-8") as f:
+def evaluate_all(input_path: str, output_path: str, debug_path: Optional[str] = None):
+    with open(input_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
-    out = []
-    debug_cases = []
+    if SAMPLE_SIZE:
+        data = data[:SAMPLE_SIZE]
 
-    for idx, ent in enumerate(data, 1):
-        print(f"[{idx}/{len(data)}] {ent['question'][:50]}...")
-        result = evaluate_entry(ent)
-        out.append(result)
-
-        # Collect any “unlikely” cases for debugging:
-        if not result["is_correct"] or result["confidence_score"] < 0.5:
-            debug_cases.append({
-                "question": ent["question"],
-                "answer":   ent["generated_response"],
-                "is_correct": result["is_correct"],
-                "confidence_score": result["confidence_score"],
-                "hypotheses": result["hypotheses"],
-                "hypotheses_evaluations": result["hypotheses_evaluations"],
+    evaluated = []
+    debug = []
+    for ent in data:
+        out = evaluate_entry(ent)
+        evaluated.append(out)
+        if not out['pass']:
+            debug.append({
+                'question': out.get('question'),
+                'coverage_percent': out['coverage_percent'],
+                'missing': out['missing'],
+                'value_errors': out['value_errors']
             })
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(out, f, indent=2, ensure_ascii=False)
-    print(f"Wrote {len(out)} entries to {output_path}")
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(evaluated, f, indent=2)
+    print(f"Evaluation results saved to {output_path}")
 
-    # Dump debug cases if path given
     if debug_path:
         os.makedirs(os.path.dirname(debug_path), exist_ok=True)
-        with open(debug_path, "w", encoding="utf-8") as f:
-            json.dump(debug_cases, f, indent=2, ensure_ascii=False)
-        print(f" Wrote {len(debug_cases)} debug cases to {debug_path}")
+        with open(debug_path, 'w', encoding='utf-8') as f:
+            json.dump(debug, f, indent=2)
+        print(f"Debug output saved to {debug_path}")
 
 
-
-# ── Utilities ──────────────────────────────────────────────────────────────────
-def _safe_json_load(s: str) -> Any:
-    try:
-        return json.loads(s)
-    except json.JSONDecodeError:
-        return None
-
-def _overlaps(question: str, hypothesis: str) -> bool:
-    """
-    Quick token‐overlap filter so we only fall back when none of the generated
-    hypotheses even share a single word with the question.
-    """
-    q_tokens = set(re.findall(r"[A-Za-z0-9_]+", question.lower()))
-    h_tokens = set(re.findall(r"[A-Za-z0-9_]+", hypothesis.lower()))
-    return bool(q_tokens & h_tokens)
-
-# ── CLI Hook ───────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
+if __name__ == '__main__':
     import argparse
-    p = argparse.ArgumentParser(description="Strict NLI‑based evaluator")
-    p.add_argument("--input",  "-i", required=True, help="Processed JSON input")
-    p.add_argument("--output", "-o", required=True, help="Evaluated JSON output")
-    p.add_argument("--debug", required=False, help="Path to debug output (e.g. misclassified entries)")
+    p = argparse.ArgumentParser(description='Field-based Kubernetes evaluator')
+    p.add_argument('--input',  '-i', required=True, help='JSON input path')
+    p.add_argument('--output', '-o', required=True, help='JSON evaluated output path')
+    p.add_argument('--debug',  '-d', required=False, help='JSON debug output path')
     args = p.parse_args()
     evaluate_all(args.input, args.output, args.debug)

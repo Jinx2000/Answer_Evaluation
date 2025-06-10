@@ -10,12 +10,16 @@ def get_file_names(directory):
     return file_names
 
 def categorize_response(response: str) -> str:
-    if "apiVersion:" in response and "kind:" in response:
+    if re.search(r"(?m)^```(?:yaml)?\s*\n", response) or (
+       "apiVersion:" in response and "kind:" in response):
         return "YAML"
-    if any(cmd in response for cmd in ["kubectl", "helm", "docker"]):
-        return "CLI"
-    return "YAML"  # Default to YAML instead of Explanation
 
+    # Detect CLI commands next
+    if re.search(r"\b(kubectl|helm|docker)\b", response):
+        return "CLI"
+
+    # Otherwise it’s free-text
+    return "Explanation"
 
 # def categorize_response(response: str) -> str:
 #     # 1) Find fenced blocks
