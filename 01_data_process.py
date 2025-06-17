@@ -56,7 +56,7 @@ def data_process(csv_filename):
             entry = {
                 "question": question,
                 "retrieved_contexts": retrieved_contexts,  # Now correctly formatted as a list
-                "generated_response": row["gpt_Generated_Response"].strip(),
+                "generated_response": row["gpt_Refined_Response"].strip(),
                 "reference_answer": row["Answer Body"].strip() if row["Answer Body"].strip() else None,  # Set to None if empty
             }
             
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     print(file_names)
     
     # 只处理 test_13.csv
-    test_13_file = "newKD_test.csv"
+    test_13_file = "test_verification_results_v5.csv"
     
     if test_13_file in file_names:
         print(f"Processing only {test_13_file}...")

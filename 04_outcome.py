@@ -10,25 +10,23 @@ def get_file_names(directory):
     return file_names
 
 
-# # 该函数用于计算 baseline 的 accuracy 数值
-# def cal_gpt_indicator():
-#     print("=============== Here are GPT scores ============")
-#     output_filename = "gpt_scores.json"
+# 该函数用于计算 baseline 的 accuracy 数值
+def cal_gpt_indicator():
+    print("=============== Here are GPT scores ============")
+    output_filename = "gpt_scores.json"
 
-#     accuracy = list()
+    accuracy = list()
 
-#     with open(output_filename, "r", encoding='utf-8') as f:
-#         eval_results = json.load(f)
-
-
-#     for result in eval_results:
-#         accuracy.append(result["answer_correctness"])
+    with open(output_filename, "r", encoding='utf-8') as f:
+        eval_results = json.load(f)
 
 
-#     accuracy_mean = np.mean(accuracy)
-#     accuracy_var = np.var(accuracy)
+    for result in eval_results:
+        accuracy.append(result["answer_correctness"])
 
-#     print(f"accuracy mean is {accuracy_mean}, variance is {accuracy_var}")
+    accuracy_mean = np.mean(accuracy)
+    accuracy_var = np.var(accuracy)
+    print(f"accuracy mean is {accuracy_mean}, variance is {accuracy_var}")
 
 
 # 该函数用于统计某一 RAG 版本各个 Metric 在 0-1 不同区间的分布情况
@@ -86,16 +84,18 @@ def plt_data(arrays, filename):
 # 该函数用于统计某个 RAG 版本的 Metric 分数
 def cal_rag_score(filename):
 
+    print("filename is :", filename)
     # 五个 Metric
     faithfulness = list()
     answer_relevancy = list()
     context_precision = list()
     context_recall = list()
-    accuracy = list()
+    # accuracy = list()
 
     with open(filename, "r", encoding='utf-8') as f:
         eval_results = json.load(f)
 
+    eval_results = eval_results[:100]
 
     for result in eval_results:
         try:
@@ -103,27 +103,36 @@ def cal_rag_score(filename):
             answer_relevancy.append(result["answer_relevancy"])
             context_precision.append(result["context_precision"])
             context_recall.append(result["context_recall"])
-            accuracy.append(result["answer_correctness"])
+            # accuracy.append(result["answer_correctness"])
         except:
-            accuracy.append(result["answer_correctness"])
+            # accuracy.append(result["answer_correctness"])
+            pass
 
-    faithfulness_mean = np.mean(faithfulness)
-    faithfulness_var = np.var(faithfulness)
+    # if "5" in filename:
+    #     faithfulness = np.array([x if x is not None else np.nan for x in faithfulness])
+    #     faithfulness = np.array([1 if x > 0.2 else 0 for x in faithfulness])
 
-    answer_relevancy_mean = np.mean(answer_relevancy)
+    faithfulness_mean = np.nanmean(faithfulness)
+    faithfulness_var = np.nanvar(faithfulness)
+
+    answer_relevancy = np.array([x if x is not None else np.nan for x in answer_relevancy])
+    answer_relevancy_mean = np.nanmean(answer_relevancy)
     answer_relevancy_var = np.var(answer_relevancy)
 
-    context_precision_mean = np.mean(context_precision)
+    context_precision = np.array([x if x is not None else np.nan for x in context_precision])
+    context_precision_mean = np.nanmean(context_precision)
     context_precision_var = np.var(context_precision)
 
-    context_recall_mean = np.mean(context_recall)
+    context_recall = np.array([x if x is not None else np.nan for x in context_recall])
+    context_recall_mean = np.nanmean(context_recall)
     context_recall_var = np.var(context_recall)
 
-    accuracy_mean = np.mean(accuracy)
-    accuracy_var = np.var(accuracy)
-    plt_data([faithfulness, answer_relevancy, context_precision, context_recall, accuracy], filename)
+    # accuracy = np.array([x if x is not None else np.nan for x in accuracy])
+    # accuracy_mean = np.nanmean(accuracy)
+    # accuracy_var = np.var(accuracy)
+    plt_data([faithfulness, answer_relevancy, context_precision, context_recall], filename)
     
-    return [faithfulness_mean, answer_relevancy_mean, context_precision_mean, context_recall_mean, accuracy_mean]
+    return [faithfulness_mean, answer_relevancy_mean, context_precision_mean, context_recall_mean]
 
 def plt_compare_scores():
     directory_path = './score_data'
@@ -134,6 +143,7 @@ def plt_compare_scores():
     scores = list()
     for file in file_names:
         scores.append(cal_rag_score(directory_path + "/" + file))
+
 
     # 提取所有 test 版本号
     test_numbers = []
@@ -158,7 +168,7 @@ def plt_compare_scores():
     scores = np.array(scores)
 
     # Metric 名称
-    metrics = ['faithfulness_mean', 'answer_relevancy_mean', 'context_precision_mean', 'context_recall_mean', 'accuracy_mean']
+    metrics = ['faithfulness_mean', 'answer_relevancy_mean', 'context_precision_mean', 'context_recall_mean']
 
     # 生成 RAG 版本标记（从 test_ 提取版本号）
     versions = [f'Test {num}' for num in test_numbers]
@@ -185,7 +195,8 @@ def plt_compare_scores():
     plt.xticks(x + bar_width * 2, metrics)  # 将x轴刻度居中
     plt.xlabel('Metrics')
     plt.ylabel('Scores')
-    plt.title(f'Comparison of RAG System Versions (Test {min_test} to {max_test})')
+    plt.title(f'Comparison of RAG System Versions')
+    # plt.legend(["Baseline", "New Embedding Model", "Structured Reference", "Refine Mechanism", "New faithfulness"])
     plt.legend()
     # save the graph 
     # 确保 `./graphs` 目录存在

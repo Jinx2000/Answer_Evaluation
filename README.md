@@ -2,7 +2,25 @@
 
 ## Usage
 
+
+### Run RAGAS evaluation System
+
+1. Put the RAG system result file in directory "./dev_data"
+2. Modify "01_data_process.py" choose the result you want to handle.
+3. Run the script by ```Python 01_data_process.py```.
+4. The processed_data file will be stored in root directory.
+5. Run the script by ```Python 02_ragas_score.py```.
+6. The score result will be stored in root directory.
+7. Move the socre files into directory "./score_data"
+8. Run the script by ```Python 04_outcome.py``` to get the visualized result.
+
+> "04_outcome.py" will plt all score file in "./score_data", so remove something you don't wanna plt file from the "./score_data"
+
+
 ### Run Key Point Extraction
+
+script is in dir "./archive".
+
 ```bash
 python LLM_keypoint.py
 ```
@@ -208,3 +226,12 @@ The main changes are:
 The current evaluation accuracy is roughly 91.4% (32/35).
 
 I will also optimize it periodically in the future
+
+
+## Results Explanation in /score_data
+
+- test_13 主要是基于 test_1 开发的，13版本说明使用的是 OpenAI Embedding Model
+- test_131 指在 13 的基础上，将reference answer 的进行了结构化
+- test 132 采用了新的 knowledge dataset，效果不好，已弃用。
+- test 133 采用了 refine answer 机制
+- test 134 结构化了 user input 效果不好 还需要改进
